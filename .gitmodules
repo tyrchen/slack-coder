@@ -1,3 +1,6 @@
 [submodule "vendors/claude-agent-sdk-rs"]
 	path = vendors/claude-agent-sdk-rs
 	url = https://github.com/tyrchen/claude-agent-sdk-rs
+[submodule "vendors/slack-morphism-rust"]
+	path = vendors/slack-morphism-rust
+	url = https://github.com/abdolence/slack-morphism-rust

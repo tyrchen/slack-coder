@@ -41,3 +41,9 @@ please revise docs accordingly.
 ## implement plan
 
 look at the usage of @examples/agent.rs and update @specs/0002-slack-bot-design.md accordingly. Then put an impl plan on ./specs/0004-initial-plan.md
+
+## phase 1 and 2
+
+implement phase 1.
+
+make sure you use slack-morphism 2, refer @vendors/slack-morphism-rust/examples/socket_mode.rs for socket mode usage and @vendors/slack-morphism-rust/ for detailed usage. Now go to phase 2.

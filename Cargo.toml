@@ -1,24 +1,60 @@
 [package]
 name = "slack-coder"
 version = "0.1.0"
-authors = ["Your Name <YourName@yourdomain.com>"]
+authors = ["Tyr Chen <tyr.chen@gmail.com>"]
 edition = "2024"
 license = "MIT"
-documentation = "https://docs.rs/"
-repository = "https://github.com/TODO"
-homepage = "https://github.com/TODO"
-description = """
-
-"""
+documentation = "https://docs.rs/slack-coder"
+repository = "https://github.com/tyrchen/slack-coder"
+homepage = "https://github.com/tyrchen/slack-coder"
+description = "A Slack bot that can generate code and docs using Claude"
 readme = "README.md"
 categories = ["development-tools"]
-keywords = []
+keywords = ["slack", "bot", "claude", "ai", "agent"]
 
 [dependencies]
-anyhow = "1.0.98"
+# Async runtime
+tokio = { version = "1.48", features = [
+  "rt-multi-thread",
+  "macros",
+  "fs",
+  "sync",
+] }
+futures = "0.3"
+
+# Slack SDK
+slack-morphism = { version = "2", features = ["hyper"] }
+
+# HTTP client
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "rustls-tls",
+] }
+
+# Claude Agent SDK
 claude-agent-sdk-rs = "0.2.0"
-futures = "0.3.31"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.142"
-thiserror = "2.0.12"
-tokio = { version = "1.47.1", features = ["rt", "rt-multi-thread", "macros"] }
+
+# Concurrent data structures
+dashmap = "6.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Logging and tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Configuration
+dotenvy = "0.15"
+
+# Utilities
+chrono = "0.4"
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.23"
