@@ -1,5 +1,6 @@
+use crate::agent::AgentManager;
 use crate::error::Result;
-use crate::slack::{MessageProcessor, SlackClient};
+use crate::slack::{FormHandler, MessageProcessor, SlackClient};
 use slack_morphism::prelude::*;
 use std::sync::Arc;
 
@@ -8,15 +9,22 @@ pub struct EventHandler {
     slack_client: Arc<SlackClient>,
     #[allow(dead_code)]
     message_processor: MessageProcessor,
+    #[allow(dead_code)]
+    form_handler: FormHandler,
 }
 
 impl EventHandler {
-    pub fn new(slack_client: Arc<SlackClient>) -> Self {
-        let message_processor = MessageProcessor::new(slack_client.clone());
+    pub fn new(
+        slack_client: Arc<SlackClient>,
+        agent_manager: Arc<AgentManager>,
+    ) -> Self {
+        let message_processor = MessageProcessor::new(slack_client.clone(), agent_manager.clone());
+        let form_handler = FormHandler::new(slack_client.clone(), agent_manager.clone());
 
         Self {
             slack_client,
             message_processor,
+            form_handler,
         }
     }
 
@@ -63,12 +71,17 @@ impl EventHandler {
 
         match event.event {
             SlackEventCallbackBody::AppMention(mention) => {
-                tracing::info!("App mentioned in channel: {:?}", mention.channel);
-                // TODO: Handle app mention
+                tracing::info!(
+                    "App mentioned in channel: {:?} by user: {:?}",
+                    mention.channel,
+                    mention.user
+                );
+                // TODO: Extract from states and call message_processor
+                // For now, just log
             }
             SlackEventCallbackBody::Message(message) => {
                 tracing::info!("Message received: {:?}", message);
-                // TODO: Handle message
+                // TODO: Extract from states and call message_processor
             }
             _ => {
                 tracing::debug!("Unhandled event type");

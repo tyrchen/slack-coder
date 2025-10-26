@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
     tracing::info!("Channels scanned and agents restored");
 
     // Start event handler
-    let event_handler = EventHandler::new(slack_client.clone());
+    let event_handler = EventHandler::new(slack_client.clone(), agent_manager.clone());
     tracing::info!("Event handler starting...");
 
     event_handler.start().await?;

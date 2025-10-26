@@ -6,9 +6,10 @@ use crate::storage::Workspace;
 use dashmap::DashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 
 pub struct AgentManager {
-    repo_agents: Arc<DashMap<ChannelId, Arc<RepoAgent>>>,
+    repo_agents: Arc<DashMap<ChannelId, Arc<Mutex<RepoAgent>>>>,
     workspace: Arc<Workspace>,
     settings: Arc<Settings>,
     progress_tracker: Arc<ProgressTracker>,
@@ -45,7 +46,8 @@ impl AgentManager {
 
                 match self.create_repo_agent(channel_id.clone()).await {
                     Ok(agent) => {
-                        self.repo_agents.insert(channel_id.clone(), Arc::new(agent));
+                        self.repo_agents
+                            .insert(channel_id.clone(), Arc::new(Mutex::new(agent)));
                         tracing::info!("Agent restored for channel {}", channel_id.as_str());
                     }
                     Err(e) => {
@@ -85,7 +87,8 @@ impl AgentManager {
 
         // Create repository agent
         let repo_agent = self.create_repo_agent(channel_id.clone()).await?;
-        self.repo_agents.insert(channel_id, Arc::new(repo_agent));
+        self.repo_agents
+            .insert(channel_id, Arc::new(Mutex::new(repo_agent)));
 
         Ok(())
     }
@@ -106,7 +109,7 @@ impl AgentManager {
     }
 
     /// Get repository agent for a channel
-    pub async fn get_repo_agent(&self, channel_id: &ChannelId) -> Result<Arc<RepoAgent>> {
+    pub async fn get_repo_agent(&self, channel_id: &ChannelId) -> Result<Arc<Mutex<RepoAgent>>> {
         self.repo_agents
             .get(channel_id)
             .map(|r| r.clone())
@@ -120,12 +123,12 @@ impl AgentManager {
 
     /// Remove agent for a channel
     pub async fn remove_agent(&self, channel_id: &ChannelId) -> Result<()> {
-        if let Some((_, agent)) = self.repo_agents.remove(channel_id) {
+        if let Some((_, agent_mutex)) = self.repo_agents.remove(channel_id) {
             // Try to unwrap and disconnect if we have sole ownership
-            if let Ok(agent) = Arc::try_unwrap(agent) {
+            if let Ok(mutex) = Arc::try_unwrap(agent_mutex) {
+                let agent = mutex.into_inner();
                 agent.disconnect().await?;
             }
-            // If Arc has multiple references, just drop it
         }
         Ok(())
     }
@@ -136,7 +139,8 @@ impl AgentManager {
         let mut to_remove = Vec::new();
 
         for entry in self.repo_agents.iter() {
-            if entry.value().is_expired(timeout) {
+            let agent = entry.value().lock().await;
+            if agent.is_expired(timeout) {
                 to_remove.push(entry.key().clone());
             }
         }
