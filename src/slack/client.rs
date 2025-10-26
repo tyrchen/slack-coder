@@ -100,6 +100,7 @@ impl SlackClient {
 
     /// Get list of channels where bot is a member
     pub async fn list_channels(&self) -> Result<Vec<ChannelId>> {
+        tracing::debug!("📋 Fetching channel list from Slack API...");
         let session = self.client.open_session(&self.token);
 
         let request = SlackApiConversationsListRequest::new().with_types(vec![
@@ -112,12 +113,26 @@ impl SlackClient {
             .await
             .map_err(|e| SlackCoderError::SlackApi(e.to_string()))?;
 
-        let channels = response
+        tracing::debug!("Received {} total channels", response.channels.len());
+
+        let channels: Vec<ChannelId> = response
             .channels
-            .into_iter()
+            .iter()
             .filter(|c| c.flags.is_member.unwrap_or(false))
-            .map(|c| ChannelId::new(c.id.to_string()))
+            .map(|c| {
+                tracing::debug!(
+                    "  Channel: {} (member: {})",
+                    c.id,
+                    c.flags.is_member.unwrap_or(false)
+                );
+                ChannelId::new(c.id.to_string())
+            })
             .collect();
+
+        tracing::info!("Found {} channels where bot is a member", channels.len());
+        for ch in &channels {
+            tracing::debug!("  - {}", ch.as_str());
+        }
 
         Ok(channels)
     }

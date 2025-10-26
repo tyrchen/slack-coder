@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 pub struct FormHandler {
     slack_client: Arc<SlackClient>,
-    agent_manager: Arc<AgentManager>,
+    pub agent_manager: Arc<AgentManager>,
 }
 
 impl FormHandler {
@@ -35,41 +35,50 @@ Reply with your repository name to begin setup."#;
 
     /// Handle repository setup from user message
     pub async fn handle_repo_setup(&self, channel: ChannelId, repo_name: String) -> Result<()> {
+        tracing::info!("🔧 Starting repository setup");
+        tracing::info!("  Channel: {}", channel.as_str());
+        tracing::info!("  Repository: {}", repo_name);
+
         // Validate repo name format
         let (owner, repo) = Self::validate_repo_name_format(&repo_name)?;
-
-        tracing::info!(
-            "Starting setup for channel {} with repo {}/{}",
-            channel.as_str(),
-            owner,
-            repo
-        );
+        tracing::debug!("✅ Validated format: owner={}, repo={}", owner, repo);
 
         // Send acknowledgment
+        tracing::debug!("Sending acknowledgment to Slack...");
         self.slack_client
             .send_message(
                 &channel,
-                &format!("Setting up repository `{}`...\nThis may take a minute.", repo_name),
+                &format!("🔧 Setting up repository `{}`...\nThis may take a minute. I'll update you on progress.", repo_name),
                 None,
             )
             .await?;
+        tracing::info!("✅ Acknowledgment sent");
 
         // Trigger setup via agent manager
+        tracing::info!("🚀 Invoking agent manager to setup channel...");
         self.agent_manager
             .setup_channel(channel.clone(), repo_name.clone())
             .await?;
+        tracing::info!("✅ Agent setup completed");
 
-        // Send completion message
+        // Send completion message with proper formatting
+        tracing::debug!("Sending completion message...");
+        let completion_msg = format!(
+            ":white_check_mark: *Repository `{}` is now ready!*\n\n\
+            You can now ask me to:\n\
+            • Generate code\n\
+            • Write documentation\n\
+            • Refactor existing code\n\
+            • Review and commit changes\n\
+            • Create pull requests\n\n\
+            Try: `@slack-coder /help` for more information",
+            repo_name
+        );
+
         self.slack_client
-            .send_message(
-                &channel,
-                &format!(
-                    "✅ Repository `{}` is now ready!\n\nYou can now ask me to generate code, write documentation, or use commands like `/help`.",
-                    repo_name
-                ),
-                None,
-            )
+            .send_message(&channel, &completion_msg, None)
             .await?;
+        tracing::info!("🎉 Setup workflow completed successfully");
 
         Ok(())
     }

@@ -47,3 +47,44 @@ look at the usage of @examples/agent.rs and update @specs/0002-slack-bot-design.
 implement phase 1.
 
 make sure you use slack-morphism 2, refer @vendors/slack-morphism-rust/examples/socket_mode.rs for socket mode usage and @vendors/slack-morphism-rust/ for detailed usage. Now go to phase 2.
+
+## invite to channel bug
+
+invited to channel but no form is shown, no interaction with the bot.
+
+2025-10-26T18:19:58.279183Z  INFO slack_coder::slack::events: 78: 📱 Bot is ready to receive messages. Invite it to a channel and @mention it!
+2025-10-26T18:19:58.279196Z DEBUG slack_morphism::socket_mode::listener: 65: Starting all WSS clients
+2025-10-26T18:19:58.279561Z DEBUG Slack API request{/slack/team_id="-"}: slack_morphism::hyper_tokio::connector: 117: Sending HTTP request to <https://slack.com/api/apps.connections.open> slack_uri="<https://slack.com/api/apps.connections.open>"
+2025-10-26T18:19:58.388631Z DEBUG Slack API request{/slack/team_id="-"}: slack_morphism::hyper_tokio::connector: 134: Received HTTP response 200 OK slack_uri="<https://slack.com/api/apps.connections.open>" slack_http_status=200
+2025-10-26T18:19:58.843552Z DEBUG slack_morphism::hyper_tokio::socket_mode::tungstenite_wss_client: 134: [0/0/0] Connected to wss://wss-primary.slack.com/link/?ticket=68ebdb63-b075-4450-8bf3-f8b4da40409e&app_id=70427329c4b6caccd454234579ae85fa3a5a92e8e8edff2ff9bf8ad95242e250 slack_wss_client_id="0/0/0"
+2025-10-26T18:19:58.855947Z DEBUG slack_morphism::socket_mode::callbacks: 100: Received Slack hello for socket mode: SlackSocketModeHelloEvent { connection_info: SlackSocketModeConnectionInfo { app_id: SlackAppId("A09NK3EL5PD") }, num_connections: 1, debug_info: SlackSocketModeDebugInfo { host: "applink-7", started: None, build_number: Some(3), approximate_connection_time: Some(18060) } }
+2025-10-26T18:20:03.281673Z DEBUG Slack API request{/slack/team_id="-"}: slack_morphism::hyper_tokio::connector: 117: Sending HTTP request to <https://slack.com/api/apps.connections.open> slack_uri="<https://slack.com/api/apps.connections.open>"
+2025-10-26T18:20:03.395916Z DEBUG Slack API request{/slack/team_id="-"}: slack_morphism::hyper_tokio::connector: 134: Received HTTP response 200 OK slack_uri="<https://slack.com/api/apps.connections.open>" slack_http_status=200
+2025-10-26T18:20:03.806222Z DEBUG slack_morphism::hyper_tokio::socket_mode::tungstenite_wss_client: 134: [1/1/0] Connected to wss://wss-primary.slack.com/link/?ticket=9eea456d-512a-4db7-907c-6dd1da68c8a6&app_id=70427329c4b6caccd454234579ae85fa3a5a92e8e8edff2ff9bf8ad95242e250 slack_wss_client_id="1/1/0"
+2025-10-26T18:20:03.817082Z DEBUG slack_morphism::socket_mode::callbacks: 100: Received Slack hello for socket mode: SlackSocketModeHelloEvent { connection_info: SlackSocketModeConnectionInfo { app_id: SlackAppId("A09NK3EL5PD") }, num_connections: 2, debug_info: SlackSocketModeDebugInfo { host: "applink-3", started: None, build_number: Some(3), approximate_connection_time: Some(18060) } }
+2025-10-26T18:20:17.873458Z  INFO slack_coder::slack::events: 90: 📨 Received push event: Message(SlackMessageEvent { origin: SlackMessageOrigin { ts: SlackTs("1761502816.706259"), channel: Some(SlackChannelId("C09NRMS2A58")), channel_type: Some(SlackChannelType("channel")), thread_ts: None, client_msg_id: None }, content: Some(SlackMessageContent { text: Some("<@U09NPJCJXU6> has joined the channel"), blocks: None, attachments: None, upload: None, files: None, reactions: None, metadata: None }), sender: SlackMessageSender { user: Some(SlackUserId("U09NPJCJXU6")), bot_id: None, username: None, display_as_bot: None, user_profile: None, bot_profile: None }, subtype: Some(ChannelJoin), hidden: None, message: None, previous_message: None, deleted_ts: None })
+2025-10-26T18:20:17.873635Z  INFO slack_coder::slack::events: 158: Message received: SlackMessageEvent { origin: SlackMessageOrigin { ts: SlackTs("1761502816.706259"), channel: Some(SlackChannelId("C09NRMS2A58")), channel_type: Some(SlackChannelType("channel")), thread_ts: None, client_msg_id: None }, content: Some(SlackMessageContent { text: Some("<@U09NPJCJXU6> has joined the channel"), blocks: None, attachments: None, upload: None, files: None, reactions: None, metadata: None }), sender: SlackMessageSender { user: Some(SlackUserId("U09NPJCJXU6")), bot_id: None, username: None, display_as_bot: None, user_profile: None, bot_profile: None }, subtype: Some(ChannelJoin), hidden: None, message: None, previous_message: None, deleted_ts: None }
+
+## slack message improvement
+
+Got the following messages, looks good but can be improved. 1) use animated emoji for progress. 2) Output the result message in a well formatted way (its markdown). 3) once the main agent is done, start the repo based agent and it should handle the following requests for the channel/repo.
+
+```
+slack-coder
+APP  11:24 AM
+:wrench: Setting up repository tyrchen/http-tunnel...
+This may take a minute. I'll update you on progress.
+11:24
+:wrench: Setting up repository tyrchen/http-tunnel...
+This may take a minute. I'll update you on progress.
+11:24
+Progress:
+:white_check_mark: Validate repository access
+:white_check_mark: Clone repository to workspace
+:white_check_mark: Analyze codebase structure
+:white_check_mark: Generate system prompt
+:white_check_mark: Save system prompt to disk (edited)
+11:29
+:white_check_mark: Repository tyrchen/http-tunnel is now ready!
+You can now ask me to generate code, write documentation, or use commands like /help.
+```

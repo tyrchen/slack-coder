@@ -56,13 +56,16 @@ impl ProgressTracker {
 
     /// Format plan as Slack message with emojis
     fn format_plan(plan: &Plan) -> String {
-        let mut lines = vec!["*Progress:*".to_string()];
+        let completed = plan.get_completed_count();
+        let total = plan.get_total_count();
+
+        let mut lines = vec![format!("*Progress:* {} / {}", completed, total)];
 
         for task in &plan.todos {
             let emoji = match task.status {
-                TaskStatus::Completed => "✅",
-                TaskStatus::InProgress => "⏳",
-                TaskStatus::Pending => "⬜",
+                TaskStatus::Completed => ":white_check_mark:",
+                TaskStatus::InProgress => ":hourglass_flowing_sand:", // Animated emoji
+                TaskStatus::Pending => ":white_medium_square:",
             };
 
             let text = if task.status == TaskStatus::InProgress {

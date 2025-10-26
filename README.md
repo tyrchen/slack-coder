@@ -175,6 +175,8 @@ sequenceDiagram
 
 **Need detailed Slack setup?** → [Complete Slack Setup Guide](docs/SLACK_SETUP.md)
 
+**Bot not responding?** → [Debugging Guide](docs/DEBUGGING.md)
+
 ## Setup
 
 ### Prerequisites

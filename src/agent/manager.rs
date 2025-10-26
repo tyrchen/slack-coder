@@ -35,44 +35,55 @@ impl AgentManager {
 
     /// Scan Slack channels and restore existing agents from disk
     pub async fn scan_and_restore_channels(&self, slack_client: &SlackClient) -> Result<()> {
-        tracing::info!("Scanning Slack channels...");
+        tracing::info!("🔍 Scanning Slack channels for existing setups...");
 
         let channels = slack_client.list_channels().await?;
-        tracing::info!("Found {} channels", channels.len());
+        tracing::info!("📊 Total channels to check: {}", channels.len());
 
+        let mut restored_count = 0;
         for channel_id in channels {
+            tracing::debug!("Checking channel: {}", channel_id.as_str());
+
             if self.workspace.is_channel_setup(&channel_id).await {
-                tracing::info!("Restoring agent for channel {}", channel_id.as_str());
+                tracing::info!(
+                    "♻️  Found existing setup for channel {}",
+                    channel_id.as_str()
+                );
 
                 match self.create_repo_agent(channel_id.clone()).await {
                     Ok(agent) => {
                         self.repo_agents
                             .insert(channel_id.clone(), Arc::new(Mutex::new(agent)));
-                        tracing::info!("Agent restored for channel {}", channel_id.as_str());
+                        tracing::info!("✅ Agent restored for channel {}", channel_id.as_str());
+                        restored_count += 1;
                     }
                     Err(e) => {
                         tracing::warn!(
-                            "Failed to restore agent for channel {}: {}",
+                            "⚠️  Failed to restore agent for channel {}: {}",
                             channel_id.as_str(),
                             e
                         );
                     }
                 }
+            } else {
+                tracing::debug!("  Channel {} not setup yet", channel_id.as_str());
             }
         }
 
+        tracing::info!("📈 Restored {} agents from disk", restored_count);
         Ok(())
     }
 
     /// Setup a new channel - invokes main agent to validate, clone, analyze, generate prompt
     pub async fn setup_channel(&self, channel_id: ChannelId, repo_name: String) -> Result<()> {
         tracing::info!(
-            "Setting up channel {} with repository {}",
+            "🎬 Setting up channel {} with repository {}",
             channel_id.as_str(),
             repo_name
         );
 
         // Create and run main agent
+        tracing::debug!("Creating main agent...");
         let mut main_agent = MainAgent::new(
             self.settings.clone(),
             self.workspace.clone(),
@@ -80,15 +91,28 @@ impl AgentManager {
             channel_id.clone(),
         )
         .await?;
+        tracing::info!("✅ Main agent created");
 
+        tracing::info!("🔗 Connecting main agent to Claude...");
         main_agent.connect().await?;
+        tracing::info!("✅ Connected to Claude");
+
+        tracing::info!("🚀 Running repository setup (this may take 1-2 minutes)...");
         main_agent.setup_repository(&repo_name, &channel_id).await?;
+        tracing::info!("✅ Repository setup completed");
+
+        tracing::debug!("Disconnecting main agent...");
         main_agent.disconnect().await?;
 
         // Create repository agent
+        tracing::info!("🤖 Creating repository-specific agent...");
         let repo_agent = self.create_repo_agent(channel_id.clone()).await?;
         self.repo_agents
-            .insert(channel_id, Arc::new(Mutex::new(repo_agent)));
+            .insert(channel_id.clone(), Arc::new(Mutex::new(repo_agent)));
+        tracing::info!(
+            "✅ Repository agent created and cached for channel {}",
+            channel_id.as_str()
+        );
 
         Ok(())
     }
