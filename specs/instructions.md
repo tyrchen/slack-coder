@@ -37,3 +37,7 @@ a few improvement:
   7. for design doc, the main claude agent is not managed by dashmap of repo agents.
 
 please revise docs accordingly.
+
+## implement plan
+
+look at the usage of @examples/agent.rs and update @specs/0002-slack-bot-design.md accordingly. Then put an impl plan on ./specs/0004-initial-plan.md

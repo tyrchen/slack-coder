@@ -301,19 +301,26 @@ pub struct RepoSetupForm {
 ```rust
 // src/agent/types.rs
 
+use claude_agent_sdk_rs::{ClaudeClient, ClaudeAgentOptions, Hooks, HookInput, HookContext, HookJsonOutput};
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::Instant;
+
 pub struct AgentManager {
     main_agent: Arc<MainAgent>,
     repo_agents: Arc<DashMap<ChannelId, RepoAgent>>,
     workspace: Arc<Workspace>,
     settings: Arc<Settings>,
+    progress_tracker: Arc<ProgressTracker>,
 }
 
 pub struct MainAgent {
-    sdk_agent: claude_agent_sdk_rs::ClaudeClient,
+    client: ClaudeClient,
+    plan: Arc<Mutex<Plan>>,
 }
 
 pub struct RepoAgent {
-    sdk_agent: claude_agent_sdk_rs::ClaudeClient,
+    client: ClaudeClient,
+    plan: Arc<Mutex<Plan>>,
     channel_id: ChannelId,
     last_activity: Arc<RwLock<Instant>>,
 }
@@ -324,21 +331,39 @@ pub struct AgentContext {
     pub user_id: UserId,
 }
 
-// PostToolUse hook payload for TodoWrite
-pub struct TodoItem {
+// PostToolUse hook payload for TodoWrite (matches claude-agent-sdk-rs format)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Task {
     pub content: String,
-    pub status: TodoStatus,
+    #[serde(rename = "activeForm")]
     pub active_form: String,
+    pub status: TaskStatus,
+    #[serde(skip)]
+    pub start_time: Option<Instant>,
+    #[serde(skip)]
+    pub completion_time: Option<f64>,
 }
 
-pub enum TodoStatus {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatus {
     Pending,
     InProgress,
     Completed,
 }
 
-pub struct TodoUpdate {
-    pub items: Vec<TodoItem>,
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Plan {
+    pub todos: Vec<Task>,
+}
+
+impl Plan {
+    pub fn new() -> Self;
+    pub fn update(&mut self, new_plan: Plan);
+    pub fn get_current_task(&self) -> Option<&Task>;
+    pub fn get_completed_count(&self) -> usize;
+    pub fn get_total_count(&self) -> usize;
+    pub fn is_complete(&self) -> bool;
 }
 ```
 
@@ -622,20 +647,21 @@ impl ProgressTracker {
     pub async fn start_progress(
         &self,
         channel: &ChannelId,
-        initial_todos: &[TodoItem],
+        initial_plan: &Plan,
     ) -> Result<()>;
 
-    /// Update progress message with new todo state
+    /// Update progress message with new plan state
     pub async fn update_progress(
         &self,
         channel: &ChannelId,
-        todos: &[TodoItem],
+        plan: &Plan,
     ) -> Result<()>;
 
     /// Clear progress tracking for channel
     pub async fn clear_progress(&self, channel: &ChannelId);
 
-    fn format_todos(todos: &[TodoItem]) -> String;
+    /// Format plan as Slack message with emojis
+    fn format_plan(plan: &Plan) -> String;
 }
 ```
 
@@ -678,17 +704,39 @@ impl AgentManager {
 ```rust
 // src/agent/main_agent.rs
 
+use claude_agent_sdk_rs::{ClaudeClient, ClaudeAgentOptions, SystemPrompt, PermissionMode, Hooks};
+
 impl MainAgent {
-    pub async fn new(settings: Arc<Settings>, workspace: Arc<Workspace>) -> Result<Self>;
+    /// Create new main agent with TodoWrite hook
+    pub async fn new(
+        settings: Arc<Settings>,
+        workspace: Arc<Workspace>,
+        progress_tracker: Arc<ProgressTracker>,
+        channel_id: ChannelId,
+    ) -> Result<Self>;
+
+    /// Connect to Claude API
+    pub async fn connect(&mut self) -> Result<()>;
 
     /// Run repository setup process (validate, clone, analyze, generate prompt)
     /// This invokes the Claude agent with a detailed setup prompt
     pub async fn setup_repository(
-        &self,
-        channel_id: &ChannelId,
+        &mut self,
         repo_name: &str,
     ) -> Result<()>;
+
+    /// Get current plan state
+    pub fn get_plan(&self) -> Plan;
+
+    /// Disconnect from Claude API
+    pub async fn disconnect(self) -> Result<()>;
 }
+
+// Implementation pattern:
+// 1. Create hooks with TodoWrite matcher
+// 2. Hook updates internal Plan via Arc<Mutex<Plan>>
+// 3. Hook calls progress_tracker.update_progress() to update Slack
+// 4. Use ClaudeAgentOptions::builder() to configure agent
 ```
 
 ### 5.9 Repo Agent
@@ -696,30 +744,47 @@ impl MainAgent {
 ```rust
 // src/agent/repo_agent.rs
 
+use claude_agent_sdk_rs::{ClaudeClient, Message};
+use futures::Stream;
+
 impl RepoAgent {
-    /// Create new repository-specific agent
+    /// Create new repository-specific agent with TodoWrite hook
     pub async fn new(
         channel_id: ChannelId,
         workspace: Arc<Workspace>,
         settings: Arc<Settings>,
+        progress_tracker: Arc<ProgressTracker>,
     ) -> Result<Self>;
 
-    /// Process user message and stream response
-    pub async fn process_message(
-        &self,
-        message: &str,
-        context: &AgentContext,
-    ) -> Result<AgentResponse>;
+    /// Connect to Claude API
+    pub async fn connect(&mut self) -> Result<()>;
+
+    /// Send query to agent
+    pub async fn query(&mut self, message: &str) -> Result<()>;
+
+    /// Get response stream from agent
+    pub fn receive_response(&mut self) -> impl Stream<Item = Result<Message, claude_agent_sdk_rs::ClaudeError>> + '_;
+
+    /// Get current plan state
+    pub fn get_plan(&self) -> Plan;
+
+    /// Get plan Arc for concurrent access
+    pub fn get_plan_arc(&self) -> Arc<Mutex<Plan>>;
 
     fn update_activity(&self);
 
     pub fn is_expired(&self, timeout: Duration) -> bool;
+
+    /// Disconnect from Claude API
+    pub async fn disconnect(self) -> Result<()>;
 }
 
-pub struct AgentResponse {
-    pub text: String,
-    pub stream: Option<ResponseStream>,
-}
+// Usage pattern:
+// 1. agent.connect().await
+// 2. agent.query(user_message).await
+// 3. let mut stream = agent.receive_response()
+// 4. while let Some(msg) = stream.next().await { ... }
+// 5. Meanwhile, TodoWrite hook updates plan and Slack
 ```
 
 ### 5.10 Agent Hooks
@@ -727,22 +792,46 @@ pub struct AgentResponse {
 ```rust
 // src/agent/hooks.rs
 
-/// PostToolUse hook handler for TodoWrite
-pub struct TodoWriteHook {
+use claude_agent_sdk_rs::{Hooks, HookInput, HookContext, HookJsonOutput, SyncHookJsonOutput};
+
+/// Create hooks for TodoWrite tracking
+pub fn create_todo_hooks(
+    plan: Arc<Mutex<Plan>>,
     progress_tracker: Arc<ProgressTracker>,
-}
+    channel_id: ChannelId,
+) -> Hooks {
+    let mut hooks = Hooks::new();
 
-impl TodoWriteHook {
-    pub fn new(progress_tracker: Arc<ProgressTracker>) -> Self;
+    // Clone Arcs for the closure
+    let plan_clone = Arc::clone(&plan);
+    let tracker_clone = Arc::clone(&progress_tracker);
 
-    /// Called after agent uses TodoWrite tool
-    pub async fn on_todo_write(
-        &self,
-        channel_id: &ChannelId,
-        tool_use_data: &serde_json::Value,
-    ) -> Result<()>;
+    hooks.add_post_tool_use_with_matcher(
+        "TodoWrite",
+        move |input: HookInput, _tool_use_id: Option<String>, _context: HookContext| {
+            let plan = Arc::clone(&plan_clone);
+            let tracker = Arc::clone(&tracker_clone);
+            let channel = channel_id.clone();
 
-    fn parse_todo_items(data: &serde_json::Value) -> Result<Vec<TodoItem>>;
+            Box::pin(async move {
+                if let HookInput::PostToolUse(post_tool) = input {
+                    // Parse TodoWrite tool input
+                    if let Ok(new_plan) = serde_json::from_value::<Plan>(post_tool.tool_input) {
+                        // Update internal plan
+                        if let Ok(mut p) = plan.lock() {
+                            p.update(new_plan.clone());
+                        }
+
+                        // Update Slack progress display
+                        let _ = tracker.update_progress(&channel, &new_plan).await;
+                    }
+                }
+                HookJsonOutput::Sync(SyncHookJsonOutput::default())
+            })
+        },
+    );
+
+    hooks
 }
 ```
 
