@@ -88,3 +88,31 @@ Progress:
 :white_check_mark: Repository tyrchen/http-tunnel is now ready!
 You can now ask me to generate code, write documentation, or use commands like /help.
 ```
+
+## bot startup
+
+at startup, if bot is invited to the channel, and we can find the relevant repos/<channel_id>, the repo agent shall be initiated and pick up message from that channel
+
+## improve visual feedback
+
+this is a slack bot app, if you need to understand more on deps please see ./vendors. I want to improve the todo list format, please make them elegant - can it be check list? upon processing can you put animated emoji? can you add more visual feedback (e.g. a realtime updated timer) since the process
+could be long? Think this through, document your solution and plan, and then execute. Below is current message for todo list:
+
+```
+Progress: 1 / 5
+:white_check_mark: Validate repository access
+:hourglass_flowing_sand: Cloning repository to workspace
+:white_medium_square: Analyze codebase
+:white_medium_square: Generate system prompt
+:white_medium_square: Save system prompt to disk (edited)
+```
+
+## improve the system prompt
+
+For @specs/0003-system-prompt.md, add these requirements for system prompt for repo based agent:
+
+- if user asks for information, return as it
+- if user asks for generating plans/docs, it should always start with a new branch, and once finished, send a pr against main/master branch. Then include the pr link in the response.
+- if user asks for building a feature, it should always start with a new branch, and then analyze exissting code, think hard on user's input, depending how complex it is, either generate a combined requirements and implementation plan under ./specs/<seq_number>-<feature-name>.md, or generate a full fledged requirements under ./specs/<seq_number>-<feature-name>/spec.md, and then an implementation plan under ./specs/<seq_number>-<feature-name>/plan.md. Do not include code details other than high level interface. Then start coding. Do not create bolerplate or stub code, make sure each part is fully implemented and tested. And once finished, make sure code format, linting, and tests are all passed. Commit the code, push and send a pr against main/master branch. Then include the pr link in the response.
+
+Once you finished, also update existing system prompts in ~/.slack_coder/system/<channel_id>/system_prompt.md accordingly.

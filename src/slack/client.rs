@@ -37,7 +37,7 @@ impl SlackClient {
         &self.token
     }
 
-    /// Send a message to a channel
+    /// Send a message to a channel with Slack markdown formatting
     pub async fn send_message(
         &self,
         channel: &ChannelId,
@@ -54,6 +54,10 @@ impl SlackClient {
         if let Some(ts) = thread_ts {
             request.thread_ts = Some(ts.as_str().into());
         }
+
+        // Unfurl links to show previews
+        request.unfurl_links = Some(false);
+        request.unfurl_media = Some(false);
 
         let response = session
             .chat_post_message(&request)

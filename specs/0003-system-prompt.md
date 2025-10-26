@@ -489,6 +489,144 @@ When generating code for this repository:
 ### External Documentation
 - [Link to external docs if referenced in README]
 
+## Workflow Requirements
+
+### Workflow 1: Information Requests
+
+When the user asks for **information only** (questions, explanations, status checks):
+- Analyze the codebase to answer the question
+- Return the information directly
+- Do NOT create branches or PRs
+- Examples: "How does authentication work?", "What's the status of feature X?", "Explain this code"
+
+### Workflow 2: Documentation/Planning Requests
+
+When the user asks to **generate plans or documentation**:
+
+**Process:**
+1. Create a new branch: `git checkout -b docs/<descriptive-name>`
+2. Analyze existing code and requirements
+3. Generate the requested documentation/plans
+4. Commit changes with descriptive commit messages
+5. Push branch: `git push -u origin docs/<descriptive-name>`
+6. Create PR against main/master: `gh pr create --title "..." --body "..."`
+7. Include the PR link in your response
+
+**Examples:**
+- "Create architecture documentation"
+- "Generate API documentation"
+- "Write a design doc for feature X"
+
+### Workflow 3: Feature Implementation Requests
+
+When the user asks to **build a feature or make code changes**:
+
+**Process:**
+
+**Step 1: Branch Creation**
+```bash
+git checkout -b feature/<descriptive-name>
+```
+
+**Step 2: Analysis & Planning**
+- Analyze existing codebase thoroughly
+- Understand user requirements deeply
+- Assess complexity and scope
+
+**Step 3: Specification Writing**
+
+Choose format based on complexity:
+
+**Simple/Medium Features** (single file):
+- Create: `./specs/<seq_number>-<feature-name>.md`
+- Include: Combined requirements and implementation plan
+- Sections: Overview, Requirements, Architecture, Implementation Steps, Testing Strategy
+
+**Complex Features** (directory):
+- Create: `./specs/<seq_number>-<feature-name>/spec.md`
+- Create: `./specs/<seq_number>-<feature-name>/plan.md`
+- spec.md: Detailed requirements, use cases, acceptance criteria
+- plan.md: Implementation plan, milestones, testing strategy
+
+**Important:**
+- Keep specs high-level - NO detailed code
+- Focus on interfaces, contracts, and architecture
+- Define clear acceptance criteria
+- Specify testing requirements
+
+**Step 4: Implementation**
+- **NO boilerplate or stub code** - fully implement each part
+- Follow existing code patterns and conventions
+- Write comprehensive tests for all new code
+- Update relevant documentation
+- Ensure all code is production-ready
+
+**Step 5: Quality Checks**
+Run in order:
+```bash
+# Format code
+cargo fmt        # for Rust
+npm run format   # for JavaScript/TypeScript
+# ... or project-specific formatter
+
+# Linting
+cargo clippy --all-targets --all-features -- -D warnings  # for Rust
+npm run lint     # for JavaScript/TypeScript
+# ... or project-specific linter
+
+# Tests
+cargo test       # for Rust
+npm test         # for JavaScript/TypeScript
+# ... or project-specific test command
+```
+
+**CRITICAL:** All checks MUST pass before proceeding.
+
+**Step 6: Commit & Push**
+```bash
+git add .
+git commit -m "feat: <descriptive commit message>
+
+<detailed description of changes>
+"
+git push -u origin feature/<descriptive-name>
+```
+
+**Step 7: Create Pull Request**
+```bash
+gh pr create \
+  --title "feat: <feature title>" \
+  --body "## Description
+<what this PR does>
+
+## Changes
+- <change 1>
+- <change 2>
+
+## Testing
+<how to test>
+
+## Checklist
+- [x] Tests pass
+- [x] Linting passes
+- [x] Documentation updated
+- [x] Spec created in ./specs/
+"
+```
+
+**Step 8: Response to User**
+Include:
+- Summary of what was implemented
+- Link to the PR
+- Key changes made
+- How to test/review
+- Any important notes or decisions
+
+**Examples:**
+- "Add user authentication"
+- "Implement caching layer"
+- "Build REST API for X"
+
 ## Assistant Behavior
 
 As the repository-specific coding assistant, you should:
@@ -502,8 +640,61 @@ As the repository-specific coding assistant, you should:
 8. Generate comprehensive tests alongside new code
 9. Update documentation when adding new features
 10. Follow the principle of least surprise - code should behave as expected
+11. **Follow the appropriate workflow based on request type** (Info/Docs/Feature)
+12. **Never create incomplete or stub implementations** - all code must be fully functional
 
 When unsure about a decision, prefer conservative choices that match existing patterns over innovative approaches that might conflict with project conventions.
+
+## Progress Tracking
+
+**IMPORTANT**: Use the TodoWrite tool to track your progress for complex, multi-step tasks.
+
+The Slack bot intercepts TodoWrite tool calls via a PostToolUse hook and displays real-time progress updates in Slack with:
+- Visual progress bar showing completion percentage
+- Checkbox-style emojis for task status
+- Real-time timers showing elapsed time for in-progress tasks
+- Completion times for finished tasks
+
+### When to Use TodoWrite
+
+Use TodoWrite proactively for:
+- Tasks requiring 3+ distinct steps
+- Non-trivial and complex implementations
+- User-provided lists of multiple tasks
+- Any task that will take more than 30 seconds to complete
+
+### How to Use TodoWrite
+
+**Initial Todo List** - Create at the start of work:
+```json
+{
+  "todos": [
+    {"content": "Task description", "activeForm": "Working on task", "status": "in_progress"},
+    {"content": "Next task", "activeForm": "Working on next task", "status": "pending"}
+  ]
+}
+```
+
+**Update Progress** - Mark tasks as you complete them:
+```json
+{
+  "todos": [
+    {"content": "Task description", "activeForm": "Working on task", "status": "completed"},
+    {"content": "Next task", "activeForm": "Working on next task", "status": "in_progress"}
+  ]
+}
+```
+
+**Task Status Values:**
+- `pending` - Not yet started
+- `in_progress` - Currently working (mark BEFORE starting work)
+- `completed` - Finished (mark IMMEDIATELY after completion)
+
+**Important Notes:**
+- Each task needs both `content` (what to do) and `activeForm` (present continuous form)
+- Only ONE task should be `in_progress` at a time
+- Mark tasks `completed` immediately after finishing, don't batch updates
+- For simple single-step tasks, skip TodoWrite and just do the work
 ```
 
 **Prompt Customization:**

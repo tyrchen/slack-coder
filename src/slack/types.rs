@@ -11,6 +11,11 @@ impl ChannelId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Format for logging: show full ID for debugging
+    pub fn log_format(&self) -> String {
+        format!("[{}]", self.0)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

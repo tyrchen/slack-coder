@@ -35,9 +35,11 @@ Reply with your repository name to begin setup."#;
 
     /// Handle repository setup from user message
     pub async fn handle_repo_setup(&self, channel: ChannelId, repo_name: String) -> Result<()> {
-        tracing::info!("🔧 Starting repository setup");
-        tracing::info!("  Channel: {}", channel.as_str());
-        tracing::info!("  Repository: {}", repo_name);
+        tracing::info!(
+            "🔧 Starting repository setup {} repo={}",
+            channel.log_format(),
+            repo_name
+        );
 
         // Validate repo name format
         let (owner, repo) = Self::validate_repo_name_format(&repo_name)?;

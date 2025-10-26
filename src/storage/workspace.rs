@@ -39,6 +39,14 @@ impl Workspace {
         let repo_exists = fs::metadata(&repo_path).await.is_ok();
         let prompt_exists = fs::metadata(&system_prompt_path).await.is_ok();
 
+        tracing::debug!(
+            "  Checking setup: repo={} ({}), prompt={} ({})",
+            repo_path.display(),
+            repo_exists,
+            system_prompt_path.display(),
+            prompt_exists
+        );
+
         repo_exists && prompt_exists
     }
 
