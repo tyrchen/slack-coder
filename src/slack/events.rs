@@ -1,16 +1,19 @@
 use crate::agent::AgentManager;
 use crate::error::Result;
-use crate::slack::{FormHandler, MessageProcessor, SlackClient};
+use crate::slack::{ChannelId, FormHandler, MessageProcessor, MessageTs, SlackClient, SlackMessage, ThreadTs, UserId};
 use slack_morphism::prelude::*;
 use std::sync::Arc;
 
-pub struct EventHandler {
-    #[allow(dead_code)]
+#[derive(Clone)]
+struct BotState {
+    message_processor: Arc<MessageProcessor>,
+    form_handler: Arc<FormHandler>,
     slack_client: Arc<SlackClient>,
-    #[allow(dead_code)]
-    message_processor: MessageProcessor,
-    #[allow(dead_code)]
-    form_handler: FormHandler,
+}
+
+pub struct EventHandler {
+    slack_client: Arc<SlackClient>,
+    agent_manager: Arc<AgentManager>,
 }
 
 impl EventHandler {
@@ -18,27 +21,38 @@ impl EventHandler {
         slack_client: Arc<SlackClient>,
         agent_manager: Arc<AgentManager>,
     ) -> Self {
-        let message_processor = MessageProcessor::new(slack_client.clone(), agent_manager.clone());
-        let form_handler = FormHandler::new(slack_client.clone(), agent_manager.clone());
-
         Self {
             slack_client,
-            message_processor,
-            form_handler,
+            agent_manager,
         }
     }
 
     /// Start listening for Slack events using Socket Mode
     pub async fn start(self) -> Result<()> {
+        // Create state with our components
+        let message_processor = Arc::new(MessageProcessor::new(
+            self.slack_client.clone(),
+            self.agent_manager.clone(),
+        ));
+        let form_handler = Arc::new(FormHandler::new(
+            self.slack_client.clone(),
+            self.agent_manager.clone(),
+        ));
+
+        let bot_state = BotState {
+            message_processor,
+            form_handler,
+            slack_client: self.slack_client.clone(),
+        };
+
         let listener_environment = Arc::new(
             SlackClientEventsListenerEnvironment::new(self.slack_client.get_client())
-                .with_error_handler(Self::error_handler),
+                .with_error_handler(Self::error_handler)
+                .with_user_state(bot_state),
         );
 
         let callbacks =
-            SlackSocketModeListenerCallbacks::new().with_push_events(|event, client, states| {
-                Box::pin(Self::handle_push_event(event, client, states))
-            });
+            SlackSocketModeListenerCallbacks::new().with_push_events(Self::handle_push_event);
 
         let socket_mode_listener = SlackClientSocketModeListener::new(
             &SlackClientSocketModeConfig::new(),
@@ -46,11 +60,8 @@ impl EventHandler {
             callbacks,
         );
 
-        // TODO: Get app token from config
-        let app_token_value: SlackApiTokenValue = std::env::var("SLACK_APP_TOKEN")
-            .expect("SLACK_APP_TOKEN must be set")
-            .into();
-        let app_token = SlackApiToken::new(app_token_value);
+        // Get app token from client
+        let app_token = self.slack_client.get_app_token();
 
         socket_mode_listener
             .listen_for(&app_token)
@@ -65,9 +76,18 @@ impl EventHandler {
     async fn handle_push_event(
         event: SlackPushEventCallback,
         _client: Arc<SlackHyperClient>,
-        _states: SlackClientEventsUserState,
+        user_state: SlackClientEventsUserState,
     ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
         tracing::info!("Received push event: {:?}", event.event);
+
+        // Extract state
+        let state: BotState = {
+            let storage = user_state.read().await;
+            storage
+                .get_user_state::<BotState>()
+                .expect("BotState should be set")
+                .clone()
+        };
 
         match event.event {
             SlackEventCallbackBody::AppMention(mention) => {
@@ -76,12 +96,54 @@ impl EventHandler {
                     mention.channel,
                     mention.user
                 );
-                // TODO: Extract from states and call message_processor
-                // For now, just log
+
+                let channel_id = ChannelId::new(mention.channel.to_string());
+                let user_id = UserId::new(mention.user.to_string());
+                let text = mention.content.text.clone().unwrap_or_default();
+                let ts = MessageTs::new(mention.origin.ts.to_string());
+                let thread_ts = mention.origin.thread_ts.map(|t| ThreadTs::new(t.to_string()));
+
+                // Strip bot mention from text
+                let clean_text = text
+                    .split_whitespace()
+                    .filter(|w| !w.starts_with("<@"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .trim()
+                    .to_string();
+
+                // Check if this looks like a repository name (owner/repo pattern)
+                if clean_text.contains('/') && clean_text.split_whitespace().count() == 1 {
+                    // Likely a setup request
+                    if let Err(e) = state.form_handler.handle_repo_setup(channel_id.clone(), clean_text).await {
+                        tracing::error!("Setup failed: {}", e);
+                        let _ = state.slack_client
+                            .send_message(
+                                &channel_id,
+                                &format!("Setup failed: {}", e),
+                                thread_ts.as_ref(),
+                            )
+                            .await;
+                    }
+                } else {
+                    // Regular message - process it
+                    let slack_message = SlackMessage {
+                        channel: channel_id,
+                        user: user_id,
+                        text: clean_text,
+                        thread_ts,
+                        ts,
+                    };
+
+                    if let Err(e) = state.message_processor.process_message(slack_message).await {
+                        tracing::error!("Message processing failed: {}", e);
+                    }
+                }
             }
             SlackEventCallbackBody::Message(message) => {
                 tracing::info!("Message received: {:?}", message);
-                // TODO: Extract from states and call message_processor
+                // Handle regular messages in threads where bot participated
+                // For now, we'll focus on app_mention as primary interaction
             }
             _ => {
                 tracing::debug!("Unhandled event type");

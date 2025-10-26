@@ -15,7 +15,7 @@ pub struct MainAgent {
 impl MainAgent {
     /// Create new main agent with TodoWrite hook
     pub async fn new(
-        settings: Arc<Settings>,
+        _settings: Arc<Settings>,
         workspace: Arc<Workspace>,
         progress_tracker: Arc<ProgressTracker>,
         channel_id: ChannelId,
@@ -23,14 +23,7 @@ impl MainAgent {
         let plan = Arc::new(Mutex::new(Plan::new()));
 
         // Load main agent system prompt
-        let system_prompt = tokio::fs::read_to_string(&settings.agent.main_agent_prompt_path)
-            .await
-            .map_err(|e| {
-                SlackCoderError::Config(format!(
-                    "Failed to load main agent prompt from {:?}: {}",
-                    settings.agent.main_agent_prompt_path, e
-                ))
-            })?;
+        let system_prompt = include_str!("../../specs/0003-system-prompt.md").to_string();
 
         // Create hooks
         let hooks = create_todo_hooks(Arc::clone(&plan), progress_tracker, channel_id.clone());
@@ -39,7 +32,7 @@ impl MainAgent {
         let options = ClaudeAgentOptions::builder()
             .permission_mode(PermissionMode::BypassPermissions)
             .system_prompt(SystemPrompt::Text(system_prompt))
-            .cwd(workspace.repo_path(&channel_id))
+            .cwd(workspace.base_path())
             .hooks(hooks.build())
             .build();
 

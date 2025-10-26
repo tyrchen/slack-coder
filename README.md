@@ -169,6 +169,12 @@ sequenceDiagram
     end
 ```
 
+## Quick Start
+
+**New to this bot?** → [Quick Start Guide (15 minutes)](docs/QUICK_START.md)
+
+**Need detailed Slack setup?** → [Complete Slack Setup Guide](docs/SLACK_SETUP.md)
+
 ## Setup
 
 ### Prerequisites

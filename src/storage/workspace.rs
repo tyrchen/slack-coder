@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::slack::ChannelId;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::fs;
 
 pub struct Workspace {
@@ -10,6 +10,11 @@ pub struct Workspace {
 impl Workspace {
     pub fn new(base_path: PathBuf) -> Self {
         Self { base_path }
+    }
+
+    /// Returns the base path of the workspace
+    pub fn base_path(&self) -> &Path {
+        &self.base_path
     }
 
     /// Returns path to channel's repository: ~/.slack_coder/repos/{channel_id}/

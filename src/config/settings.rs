@@ -18,7 +18,6 @@ pub struct SlackConfig {
 
 #[derive(Debug, Clone)]
 pub struct ClaudeConfig {
-    pub api_key: String,
     pub model: String,
     pub max_tokens: usize,
 }
@@ -53,11 +52,9 @@ pub fn load_settings() -> Result<Settings> {
 
     // Load Claude config
     let claude = ClaudeConfig {
-        api_key: std::env::var("CLAUDE_API_KEY")
-            .map_err(|_| SlackCoderError::Config("CLAUDE_API_KEY not set".to_string()))?,
         model: std::env::var("CLAUDE_MODEL").unwrap_or_else(|_| "claude-sonnet-4".to_string()),
         max_tokens: std::env::var("CLAUDE_MAX_TOKENS")
-            .unwrap_or_else(|_| "8192".to_string())
+            .unwrap_or_else(|_| "65536".to_string())
             .parse()
             .map_err(|_| SlackCoderError::Config("Invalid CLAUDE_MAX_TOKENS".to_string()))?,
     };
