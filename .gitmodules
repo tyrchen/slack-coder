@@ -1,0 +1,3 @@
+[submodule "vendors/claude-agent-sdk-rs"]
+	path = vendors/claude-agent-sdk-rs
+	url = https://github.com/tyrchen/claude-agent-sdk-rs
