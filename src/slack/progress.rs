@@ -17,6 +17,11 @@ impl ProgressTracker {
         }
     }
 
+    /// Get reference to SlackClient for sending custom messages
+    pub fn slack_client_ref(&self) -> Arc<SlackClient> {
+        Arc::clone(&self.slack_client)
+    }
+
     /// Display initial progress message
     pub async fn start_progress(&self, channel: &ChannelId, initial_plan: &Plan) -> Result<()> {
         let formatted = Self::format_plan(initial_plan);

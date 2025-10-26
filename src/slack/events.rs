@@ -185,8 +185,24 @@ impl EventHandler {
                 tracing::info!("📝 Original text: '{}'", text);
                 tracing::info!("🧹 Cleaned text: '{}'", clean_text);
 
+                // Check if this is a command (starts with /)
+                if clean_text.starts_with('/') {
+                    tracing::info!("🎯 Detected command, forwarding to message processor");
+                    // Forward to message processor for command handling
+                    let slack_message = SlackMessage {
+                        channel: channel_id.clone(),
+                        user: user_id.clone(),
+                        text: clean_text.clone(),
+                        thread_ts: thread_ts.clone(),
+                        ts: ts.clone(),
+                    };
+
+                    if let Err(e) = state.message_processor.process_message(slack_message).await {
+                        tracing::error!("❌ Command processing failed: {}", e);
+                    }
+                }
                 // Check if this looks like a repository name (owner/repo pattern)
-                if clean_text.contains('/') && clean_text.split_whitespace().count() == 1 {
+                else if clean_text.contains('/') && clean_text.split_whitespace().count() == 1 {
                     tracing::info!("🔧 Detected setup request: {}", clean_text);
                     if let Err(e) = state
                         .form_handler

@@ -2,18 +2,34 @@
 
 **IMPORTANT**: You MUST follow these workflows for ALL tasks. These requirements take precedence over repository-specific guidance.
 
+## MANDATORY PRE-WORK GIT PREPARATION
+
+**BEFORE creating ANY branch, you MUST**:
+1. Check current git status: `git status`
+2. Handle any uncommitted changes (commit or stash - NEVER drop)
+3. **Checkout to main/master**: `git checkout main` (or `master`)
+4. **Pull latest changes**: `git pull origin main`
+5. **THEN** create your feature/docs branch
+
+**This is NOT optional! Every workflow starts with these steps!**
+
+## Core Workflow Rules
+
 **ALWAYS**:
-1. Create branches for docs and features (NEVER work on main/master)
-2. Create PRs for docs and features (ALWAYS include PR link in response)
-3. Preserve user's uncommitted work (NEVER drop changes)
-4. Return to main branch after PR submission
+1. **Start from updated main** - Pull latest before creating branches
+2. Create branches for docs and features (NEVER work directly on main/master)
+3. Create PRs for docs and features (ALWAYS include PR link in response)
+4. Preserve user's uncommitted work (NEVER drop changes)
+5. Return to main branch after PR submission
 
 **If you create ANY files (specs, docs, code), you MUST**:
+- Prepare git state (checkout main, pull latest)
 - Create a branch
 - Commit the changes
 - Push the branch
 - Create a PR
 - Include the PR link in your response
+- Return to main branch
 
 ---
 
@@ -30,7 +46,9 @@
 
 ## Pre-Work Git State Check
 
-Before starting ANY work (docs or features), check and prepare the git state:
+**THIS SECTION IS MANDATORY - DO NOT SKIP!**
+
+Before starting ANY work (docs or features), you MUST perform ALL these steps in order:
 
 ### Step 1: Check Current Status
 
@@ -641,7 +659,9 @@ Use TodoWrite proactively for:
 ```json
 {
   "todos": [
-    {"content": "Check git state and create docs branch", "activeForm": "Creating docs branch", "status": "in_progress"},
+    {"content": "Check git status and handle uncommitted changes", "activeForm": "Checking git status", "status": "in_progress"},
+    {"content": "Checkout main branch and pull latest", "activeForm": "Updating main branch", "status": "pending"},
+    {"content": "Create docs branch", "activeForm": "Creating docs branch", "status": "pending"},
     {"content": "Analyze codebase for review", "activeForm": "Analyzing codebase", "status": "pending"},
     {"content": "Identify issues and improvements", "activeForm": "Identifying improvements", "status": "pending"},
     {"content": "Generate improvement specification", "activeForm": "Generating specification", "status": "pending"},
@@ -657,7 +677,9 @@ Use TodoWrite proactively for:
 ```json
 {
   "todos": [
-    {"content": "Check git state and create feature branch", "activeForm": "Creating feature branch", "status": "in_progress"},
+    {"content": "Check git status and handle uncommitted changes", "activeForm": "Checking git status", "status": "in_progress"},
+    {"content": "Checkout main branch and pull latest", "activeForm": "Updating main branch", "status": "pending"},
+    {"content": "Create feature branch", "activeForm": "Creating feature branch", "status": "pending"},
     {"content": "Analyze existing code and dependencies", "activeForm": "Analyzing existing code", "status": "pending"},
     {"content": "Create feature specification", "activeForm": "Creating specification", "status": "pending"},
     {"content": "Commit specification", "activeForm": "Committing specification", "status": "pending"},
@@ -697,3 +719,12 @@ Notice: Information requests do NOT include git workflow steps because no files 
 - Mark tasks `completed` immediately after finishing, don't batch updates
 - For simple single-step tasks, skip TodoWrite and just do the work
 - **For docs/features: ALWAYS include git workflow steps in your todo list**
+
+**CRITICAL REMINDER FOR ALL DOCS/FEATURE WORK**:
+
+Your first 2-3 todo items MUST ALWAYS BE:
+1. "Check git status and handle uncommitted changes"
+2. "Checkout main branch and pull latest"
+3. "Create [docs/feature] branch"
+
+Do NOT skip straight to content work - prepare git state first!

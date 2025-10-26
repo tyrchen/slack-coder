@@ -134,6 +134,19 @@ impl AgentManager {
         agent.connect().await?;
         tracing::debug!("  RepoAgent connected");
 
+        // Get session ID and send startup notification
+        let session_id = agent.get_session_id();
+        let notification = format!(
+            "🤖 *Agent Ready*\n\nSession ID: `{}`\n\nI'm ready to help with this repository! Type `/help` for available commands.",
+            session_id
+        );
+
+        // Send startup notification
+        let slack_client = self.progress_tracker.slack_client_ref();
+        let _ = slack_client
+            .send_message(&channel_id, &notification, None)
+            .await;
+
         Ok(agent)
     }
 

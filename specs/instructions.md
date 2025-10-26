@@ -136,3 +136,16 @@ For main agent, it should use the system prompt in ./prompts/main-agent-system-p
 Then when loading the system prompt for repo based agent it should be the generated one in ~/.slack_coder/system/<channel_id>/system_prompt.md, and the common workflow should be in ./prompts/repo-agent-workflow.md.
 
 Once you finished, also update existing system prompts in ~/.slack_coder/system/<channel_id>/system_prompt.md accordingly. Remove the common workflow from the generated one.
+
+## slack command
+
+Please support the following slack commands:
+
+- /help: show available commands
+- /new-session: start a new session
+
+sometimes the current conversation is finished, user want to do something else, with `/new-session`, the bot shall start a new session by using `query_with_session` (new in claude agent sdk v0.2.1). And notify the user that a new session is started.
+
+With this change - upon start of repo agent, it shall always generate a new session id, send a message to the channel to inform the user that a new session is started. And use this session id for all the following conversations until the user issues `/new-session`.
+
+Think hard and document this change to ./specs/0005-slack-new-session-command.md.

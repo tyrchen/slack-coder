@@ -1,6 +1,8 @@
 use crate::agent::AgentManager;
 use crate::error::{Result, SlackCoderError};
-use crate::slack::{ChannelId, SlackClient, SlackMessage, ThreadTs, markdown_to_slack};
+use crate::slack::{
+    ChannelId, SlackClient, SlackCommandHandler, SlackMessage, ThreadTs, markdown_to_slack,
+};
 use claude_agent_sdk_rs::Message as ClaudeMessage;
 use futures::StreamExt;
 use std::sync::Arc;
@@ -26,6 +28,15 @@ impl MessageProcessor {
             message.user.as_str()
         );
         tracing::debug!("  Text: '{}'", message.text);
+
+        // Check if message is a command
+        if message.text.starts_with('/') {
+            tracing::info!("🎯 Detected command: {}", message.text);
+            let command_handler = SlackCommandHandler::new(self.slack_client.clone());
+            return command_handler
+                .handle_command(&message.text, &message.channel, &self.agent_manager)
+                .await;
+        }
 
         // Check if channel has configured agent
         let has_agent = self.agent_manager.has_agent(&message.channel);
