@@ -23,7 +23,7 @@ impl MainAgent {
         let plan = Arc::new(Mutex::new(Plan::new()));
 
         // Load main agent system prompt
-        let system_prompt = include_str!("../../specs/0003-system-prompt.md").to_string();
+        let system_prompt = include_str!("../../prompts/main-agent-system-prompt.md").to_string();
 
         // Create hooks
         let hooks = create_todo_hooks(Arc::clone(&plan), progress_tracker, channel_id.clone());

@@ -491,16 +491,26 @@ When generating code for this repository:
 
 ## Note: Workflow Requirements
 
-**The common git workflow requirements, branch management, and PR creation workflows are NOT included in this generated system prompt.**
+**IMPORTANT**: Do NOT include workflow requirements in the generated system prompt.
 
-Those will be loaded separately from `./prompts/repo-agent-workflow.md` by the application and appended automatically.
+The common workflow requirements (git workflows, branch management, PR creation, TodoWrite instructions) will be loaded separately from `./prompts/repo-agent-workflow.md` and appended automatically by the application.
 
-**Do NOT include git workflow instructions in the generated system prompt.** Focus only on:
-- Repository-specific information
-- Technology stack
-- Code conventions
-- Architecture patterns
-- Testing practices
+**Focus the generated system prompt on:**
+- Repository overview and purpose
+- Technology stack and dependencies
+- Project structure and organization
+- Code conventions and patterns
+- Architecture and design decisions
+- Testing practices and frameworks
+- Important files and their purposes
+- Repository-specific best practices
+
+**Do NOT include:**
+- Git workflow instructions
+- Branch management procedures
+- PR creation steps
+- TodoWrite usage instructions
+- Generic coding advice
 
 ## Assistant Behavior
 
@@ -515,193 +525,8 @@ As the repository-specific coding assistant, you should:
 8. Generate comprehensive tests alongside new code
 9. Update documentation when adding new features
 10. Follow the principle of least surprise - code should behave as expected
-11. **Follow the appropriate workflow based on request type** (Info/Docs/Feature)
-12. **Never create incomplete or stub implementations** - all code must be fully functional
 
 When unsure about a decision, prefer conservative choices that match existing patterns over innovative approaches that might conflict with project conventions.
-
-## Progress Tracking
-
-**IMPORTANT**: Use the TodoWrite tool to track your progress for complex, multi-step tasks.
-
-The Slack bot intercepts TodoWrite tool calls via a PostToolUse hook and displays real-time progress updates in Slack with:
-- Visual progress bar showing completion percentage
-- Checkbox-style emojis for task status
-- Real-time timers showing elapsed time for in-progress tasks
-- Completion times for finished tasks
-
-### When to Use TodoWrite
-
-Use TodoWrite proactively for:
-- Tasks requiring 3+ distinct steps
-- Non-trivial and complex implementations
-- User-provided lists of multiple tasks
-- Any task that will take more than 30 seconds to complete
-
-### How to Use TodoWrite
-
-**Initial Todo List** - Create at the start of work:
-```json
-{
-  "todos": [
-    {"content": "Task description", "activeForm": "Working on task", "status": "in_progress"},
-    {"content": "Next task", "activeForm": "Working on next task", "status": "pending"}
-  ]
-}
-```
-
-**Update Progress** - Mark tasks as you complete them:
-```json
-{
-  "todos": [
-    {"content": "Task description", "activeForm": "Working on task", "status": "completed"},
-    {"content": "Next task", "activeForm": "Working on next task", "status": "in_progress"}
-  ]
-}
-```
-
-**Task Status Values:**
-- `pending` - Not yet started
-- `in_progress` - Currently working (mark BEFORE starting work)
-- `completed` - Finished (mark IMMEDIATELY after completion)
-
-**Important Notes:**
-- Each task needs both `content` (what to do) and `activeForm` (present continuous form)
-- Only ONE task should be `in_progress` at a time
-- Mark tasks `completed` immediately after finishing, don't batch updates
-- For simple single-step tasks, skip TodoWrite and just do the work
-```
-
-**Prompt Customization:**
-
-The above is a template. Customize each section based on actual findings:
-- Remove sections that aren't applicable
-- Add project-specific sections as needed
-- Include actual code examples from the repository
-- Reference specific files and line numbers when relevant
-- Adapt language to match project terminology
-
-### 5. System Prompt Persistence
-
-**Save Location:**
-```
-~/.slack_coder/system/{channel_id}/system_prompt.md
-```
-
-**CRITICAL**: The system prompt is saved OUTSIDE the repository, in a separate `system/` directory organized by channel ID.
-
-**Save Process:**
-1. Create system prompt directory for this channel:
-   ```bash
-   mkdir -p ~/.slack_coder/system/{channel_id}
-   ```
-
-2. Write the generated prompt to `system_prompt.md`:
-   ```bash
-   # Use Write tool to save content to:
-   # ~/.slack_coder/system/{channel_id}/system_prompt.md
-   ```
-
-3. Verify file was written successfully by reading it back
-
-4. Optionally, save a metadata file with repository info:
-   ```bash
-   # Create ~/.slack_coder/system/{channel_id}/config.json with:
-   # {"repo": "{owner}/{repo-name}", "setup_at": "timestamp"}
-   ```
-
-**Prompt Validation:**
-After generation, validate that the prompt includes:
-- [ ] Repository overview
-- [ ] Technology stack
-- [ ] Project structure
-- [ ] Code conventions
-- [ ] Testing guidelines
-- [ ] At least 3 code examples from the actual codebase
-- [ ] Domain-specific terminology (if applicable)
-- [ ] Build and run instructions
-
-### 6. Progress Reporting
-
-**CRITICAL**: Use the TodoWrite tool to track your progress throughout the setup process. The bot will intercept your TodoWrite calls via a PostToolUse hook and display progress updates in Slack.
-
-**Step 1: Create Initial Todo List**
-
-At the start of setup, use TodoWrite to create your todo list:
-
-```rust
-// Use TodoWrite tool
-{
-  "todos": [
-    {"content": "Validate repository access", "activeForm": "Validating repository access", "status": "in_progress"},
-    {"content": "Clone repository to workspace", "activeForm": "Cloning repository to workspace", "status": "pending"},
-    {"content": "Analyze codebase", "activeForm": "Analyzing codebase", "status": "pending"},
-    {"content": "Generate system prompt", "activeForm": "Generating system prompt", "status": "pending"},
-    {"content": "Save system prompt to disk", "activeForm": "Saving system prompt to disk", "status": "pending"}
-  ]
-}
-```
-
-**Step 2: Update Progress as You Work**
-
-As you complete each task, mark it as completed and update the next task to in_progress:
-
-```rust
-// After successful validation
-{
-  "todos": [
-    {"content": "Validate repository access", "activeForm": "Validating repository access", "status": "completed"},
-    {"content": "Clone repository to workspace", "activeForm": "Cloning repository to workspace", "status": "in_progress"},
-    {"content": "Analyze codebase", "activeForm": "Analyzing codebase", "status": "pending"},
-    {"content": "Generate system prompt", "activeForm": "Generating system prompt", "status": "pending"},
-    {"content": "Save system prompt to disk", "activeForm": "Saving system prompt to disk", "status": "pending"}
-  ]
-}
-```
-
-**Step 3: Provide Summary When Complete**
-
-After all tasks are done and the system prompt is saved, provide a completion message directly (not via TodoWrite):
-
-```
-✅ Setup complete!
-
-Repository: {owner}/{repo}
-Channel: {channel_id}
-Language: [detected language]
-Framework: [detected framework]
-Files analyzed: [count]
-System prompt saved to: ~/.slack_coder/system/{channel_id}/system_prompt.md
-
-The repository is now ready for use. A repository-specific agent will be created with the generated system prompt.
-```
-
-### 7. Error Recovery
-
-If any step fails, provide clear error messages and recovery options:
-
-**Clone Failure:**
-```
-❌ Failed to clone repository
-Error: [specific error message]
-
-Please check:
-1. Repository URL is correct: https://github.com/{owner}/{repo}
-2. You have access to this repository
-3. Your GitHub authentication is valid: `gh auth status`
-
-You can retry setup by mentioning me again with the repository name.
-```
-
-**Analysis Failure:**
-```
-⚠️ Partial analysis completed
-Successfully analyzed: [list what worked]
-Failed to analyze: [list what failed]
-
-I've created a basic system prompt, but some advanced features may not work optimally.
-The bot is still functional for basic operations.
-```
 
 ## Quality Checklist
 

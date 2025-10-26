@@ -27,8 +27,13 @@ impl RepoAgent {
     ) -> Result<Self> {
         let plan = Arc::new(Mutex::new(Plan::new()));
 
-        // Load system prompt from disk
-        let system_prompt = workspace
+        // Start with common workflow requirements (so they're seen first!)
+        let mut system_prompt = String::new();
+        system_prompt.push_str(include_str!("../../prompts/repo-agent-workflow.md"));
+        system_prompt.push_str("\n\n---\n\n");
+
+        // Append repository-specific system prompt from disk
+        let repo_prompt = workspace
             .load_system_prompt(&channel_id)
             .await
             .map_err(|e| {
@@ -38,6 +43,7 @@ impl RepoAgent {
                     e
                 ))
             })?;
+        system_prompt.push_str(&repo_prompt);
 
         // Create hooks
         let hooks = create_todo_hooks(Arc::clone(&plan), progress_tracker, channel_id.clone());

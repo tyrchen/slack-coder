@@ -12,6 +12,6 @@ release:
 	@cargo release push --execute
 
 update-submodule:
-	@git submodule update --init --recursive --remote
+	@git submodule update --remote --merge
 
 .PHONY: build test release update-submodule

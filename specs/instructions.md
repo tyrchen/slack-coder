@@ -116,3 +116,23 @@ For @specs/0003-system-prompt.md, add these requirements for system prompt for r
 - if user asks for building a feature, it should always start with a new branch, and then analyze exissting code, think hard on user's input, depending how complex it is, either generate a combined requirements and implementation plan under ./specs/<seq_number>-<feature-name>.md, or generate a full fledged requirements under ./specs/<seq_number>-<feature-name>/spec.md, and then an implementation plan under ./specs/<seq_number>-<feature-name>/plan.md. Do not include code details other than high level interface. Then start coding. Do not create bolerplate or stub code, make sure each part is fully implemented and tested. And once finished, make sure code format, linting, and tests are all passed. Commit the code, push and send a pr against main/master branch. Then include the pr link in the response.
 
 Once you finished, also update existing system prompts in ~/.slack_coder/system/<channel_id>/system_prompt.md accordingly.
+
+## further improve the system prompt
+
+For existing repos, please think thoroughly on how the local repo sync with remote repo. There are cases:
+
+1. currently in a branch, now user wants to develop a new feature, what should be the best practice?
+2. currently have uncommitted changes, what should be the best practice? Should we just drop it?
+3. should we always pull the latest changes from remote repo before the work? should we always checkout to main/master branch before the work?
+4. after the PR is submitted should we always checkout to main/master branch?
+
+Think all these questions through, and revisit if @specs/0003-system-prompt.md accordingly has other situations to consider. Then split the system prompt into two parts:
+
+- the main part of the system prompt for main agent that do its work and generate system prompt for repo based agent. (put in ./prompts/main-agent-system-prompt.md)
+- common workflow for repo based agent. (new file ./prompts/repo-agent-workflow.md)
+
+For main agent, it should use the system prompt in ./prompts/main-agent-system-prompt.md.
+
+Then when loading the system prompt for repo based agent it should be the generated one in ~/.slack_coder/system/<channel_id>/system_prompt.md, and the common workflow should be in ./prompts/repo-agent-workflow.md.
+
+Once you finished, also update existing system prompts in ~/.slack_coder/system/<channel_id>/system_prompt.md accordingly. Remove the common workflow from the generated one.
