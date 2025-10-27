@@ -123,16 +123,16 @@ impl MessageProcessor {
             Err(_) => {
                 tracing::warn!(timeout_secs = 3, "Agent lock timeout - agent busy");
 
-                // Send user-friendly message
+                // Send user-friendly message as reply in the same thread
                 self.slack_client
                     .send_message(
                         channel,
-                        "*Agent is currently processing another request*\n\n\
+                        "⏳ *Agent is currently processing another request*\n\n\
                          Your message has been received, but the agent is busy with a previous task. \
                          Please wait for the current task to complete and try again in a moment.\n\n\
                          *Tip*: Long-running tasks (like comprehensive code analysis or documentation) \
                          can take several minutes. You can check the latest progress update above.",
-                        thread_ts,
+                        thread_ts, // This ensures it's a reply in the thread
                     )
                     .await?;
 
