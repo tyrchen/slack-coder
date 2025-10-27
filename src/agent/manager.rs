@@ -199,4 +199,24 @@ impl AgentManager {
     pub fn has_agent(&self, channel_id: &ChannelId) -> bool {
         self.repo_agents.contains_key(channel_id)
     }
+
+    /// Get all active agents and their session IDs
+    /// Returns a list of (channel_id, session_id) tuples
+    pub async fn get_all_active_agents(&self) -> Vec<(ChannelId, String)> {
+        let mut result = Vec::new();
+
+        for entry in self.repo_agents.iter() {
+            let channel_id = entry.key().clone();
+
+            // Try to lock with short timeout
+            if let Ok(agent) =
+                tokio::time::timeout(Duration::from_millis(100), entry.value().lock()).await
+            {
+                let session_id = agent.get_session_id();
+                result.push((channel_id, session_id));
+            }
+        }
+
+        result
+    }
 }

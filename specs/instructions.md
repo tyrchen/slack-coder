@@ -149,3 +149,76 @@ sometimes the current conversation is finished, user want to do something else, 
 With this change - upon start of repo agent, it shall always generate a new session id, send a message to the channel to inform the user that a new session is started. And use this session id for all the following conversations until the user issues `/new-session`.
 
 Think hard and document this change to ./specs/0005-slack-new-session-command.md.
+
+## graceful shutdown and result messages
+
+this is a slack bot app, if you need to understand more on deps please see ./vendors. I want to add new features: 1) once the final result is sent to slack, slack bot should send another one with tokens consumed,
+cost in usd, etc. This info could be found in the ResultMessage. 2) once the tasks are finished slack bot should send a notification so that user get alerted. 3) when slack bot app quit, it shall send to all channels
+ that "Agent Gone\nSession ID: xxx ended" in the same format as Agent ready message. please think this through, document your plan in ./specs and then implement it.
+
+## better logging
+
+For all tracing, it should show better formatted data in a dev-friendly way. Review all tracing (debug, info, etc.) and make sure they're easy to read and provide enough information for understanding the flow or problem.
+
+```bash
+2025-10-27T14:49:19.953146Z  INFO slack_coder::slack::events: 111: 📨 Received push event: Message(SlackMessageEvent { origin:
+SlackMessageOrigin { ts: SlackTs("1761576558.852309"), channel: Some(SlackChannelId("C09NRMS2A58")), channel_type:
+Some(SlackChannelType("channel")), thread_ts: None, client_msg_id: None }, content: Some(SlackMessageContent { text: Some(":robot_face:
+*Agent Ready*\n\nSession ID: `session-C09NRMS2A58-1761576556-060edf`\n\nI'm ready to help with this repository! Type `/help` for available
+commands."), blocks: Some([RichText(Object {"block_id": String("xv2"), "elements": Array [Object {"elements": Array [Object {"name":
+String("robot_face"), "type": String("emoji"), "unicode": String("1f916")}, Object {"text": String(" "), "type": String("text")}, Object
+{"style": Object {"bold": Bool(true)}, "text": String("Agent Ready"), "type": String("text")}, Object {"text": String("\n\nSession ID: "),
+"type": String("text")}, Object {"style": Object {"code": Bool(true)}, "text": String("session-C09NRMS2A58-1761576556-060edf"), "type":
+String("text")}, Object {"text": String("\n\nI'm ready to help with this repository! Type "), "type": String("text")}, Object {"style":
+Object {"code": Bool(true)}, "text": String("/help"), "type": String("text")}, Object {"text": String(" for available commands."), "type":
+String("text")}], "type": String("rich_text_section")}]})]), attachments: None, upload: None, files: None, reactions: None, metadata: None
+}), sender: SlackMessageSender { user: Some(SlackUserId("U09NPJCJXU6")), bot_id: Some(SlackBotId("B09P4H5EN65")), username: None,
+display_as_bot: None, user_profile: None, bot_profile: Some(SlackBotInfo { id: Some(SlackBotId("B09P4H5EN65")), name: "slack-coder",
+updated: Some(SlackDateTime(2025-10-26T17:54:14Z)), app_id: "A09NK3EL5PD", user_id: Some("U09NPJCJXU6"), icons: Some(SlackIconImages {
+resolutions: [] }) }) }, subtype: None, hidden: None, message: None, previous_message: None, deleted_ts: None })
+```
+
+Think this through, generate a implement plan doc in ./specs and implement it entirely
+
+## The busy message
+
+This message should be a reply message to the user's original message, to make the message history clean and more readable.
+
+```
+:hourglass_flowing_sand: Agent is currently processing another request
+Your message has been received, but the agent is busy with a previous task. Please wait for the current task to complete and try again in a moment.
+Tip: Long-running tasks (like comprehensive code analysis or documentation) can take several minutes. You can check the latest progress update above.
+```
+
+## Main agent doesn't show todo tasks
+
+Help me understand why the main agent doesn't show todo tasks. If you identified the root cause, make a plan and execute it.
+
+```
+slack-coder
+APP  7:58 AM
+:wrench: Setting up repository tyrchen/slack-coder...
+This may take a minute. I'll update you on progress.
+```
+
+logs:
+
+```bash
+
+2025-10-27T14:58:23.958931Z  INFO slack_coder::slack::events: 162: 🔔 App mentioned [C09NU1KFXHT] by user: U09JDBT2MCM
+2025-10-27T14:58:23.958972Z  INFO slack_coder::slack::events: 185: 📝 Original text: '<@U09NPJCJXU6> tyrchen/slack-coder'
+2025-10-27T14:58:23.958987Z  INFO slack_coder::slack::events: 186: 🧹 Cleaned text: 'tyrchen/slack-coder'
+2025-10-27T14:58:23.959009Z  INFO slack_coder::slack::events: 206: 🔧 Detected setup request: tyrchen/slack-coder
+2025-10-27T14:58:23.959025Z  INFO slack_coder::slack::forms: 38: 🔧 Starting repository setup [C09NU1KFXHT] repo=tyrchen/slack-coder
+2025-10-27T14:58:24.140903Z  INFO slack_coder::slack::forms: 57: ✅ Acknowledgment sent
+2025-10-27T14:58:24.141052Z  INFO slack_coder::slack::forms: 60: 🚀 Invoking agent manager to setup channel...
+2025-10-27T14:58:24.141083Z  INFO slack_coder::agent::manager: 76: 🎬 Setting up [C09NU1KFXHT] repo=tyrchen/slack-coder
+2025-10-27T14:58:24.141118Z  INFO slack_coder::agent::hooks: 12: 🎣 Creating TodoWrite hooks for [C09NU1KFXHT]
+2025-10-27T14:58:24.141161Z  INFO slack_coder::agent::hooks: 74: ✅ TodoWrite hooks registered for [C09NU1KFXHT]
+2025-10-27T14:58:24.141192Z  INFO slack_coder::agent::manager: 91: ✅ Main agent created
+2025-10-27T14:58:24.141210Z  INFO slack_coder::agent::manager: 93: 🔗 Connecting main agent to Claude...
+2025-10-27T14:58:24.742698Z  INFO slack_coder::slack::events: 111: 📨 Received push event: Message(SlackMessageEvent { origin: SlackMessageOrigin { ts: SlackTs("1761577104.097489"), channel: Some(SlackChannelId("C09NU1KFXHT")), channel_type: Some(SlackChannelType("channel")), thread_ts: None, client_msg_id: None }, content: Some(SlackMessageContent { text: Some(":wrench: Setting up repository `tyrchen/slack-coder`...\nThis may take a minute. I'll update you on progress."), blocks: Some([RichText(Object {"block_id": String("lM/f"), "elements": Array [Object {"elements": Array [Object {"name": String("wrench"), "type": String("emoji"), "unicode": String("1f527")}, Object {"text": String(" Setting up repository "), "type": String("text")}, Object {"style": Object {"code": Bool(true)}, "text": String("tyrchen/slack-coder"), "type": String("text")}, Object {"text": String("...\nThis may take a minute. I'll update you on progress."), "type": String("text")}], "type": String("rich_text_section")}]})]), attachments: None, upload: None, files: None, reactions: None, metadata: None }), sender: SlackMessageSender { user: Some(SlackUserId("U09NPJCJXU6")), bot_id: Some(SlackBotId("B09P4H5EN65")), username: None, display_as_bot: None, user_profile: None, bot_profile: Some(SlackBotInfo { id: Some(SlackBotId("B09P4H5EN65")), name: "slack-coder", updated: Some(SlackDateTime(2025-10-26T17:54:14Z)), app_id: "A09NK3EL5PD", user_id: Some("U09NPJCJXU6"), icons: Some(SlackIconImages { resolutions: [] }) }) }, subtype: None, hidden: None, message: None, previous_message: None, deleted_ts: None })
+2025-10-27T14:58:24.742858Z  INFO slack_coder::slack::events: 239: 📬 Message event received
+2025-10-27T14:58:26.524258Z  INFO slack_coder::agent::manager: 95: ✅ Connected to Claude
+2025-10-27T14:58:26.524303Z  INFO slack_coder::agent::manager: 97: 🚀 Running repository setup (this may take 1-2 minutes)...
+```

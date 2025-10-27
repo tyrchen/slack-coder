@@ -1,7 +1,8 @@
 use crate::agent::AgentManager;
 use crate::error::{Result, SlackCoderError};
 use crate::slack::{
-    ChannelId, SlackClient, SlackCommandHandler, SlackMessage, ThreadTs, markdown_to_slack,
+    ChannelId, SlackClient, SlackCommandHandler, SlackMessage, ThreadTs, UsageMetrics,
+    markdown_to_slack,
 };
 use claude_agent_sdk_rs::Message as ClaudeMessage;
 use futures::StreamExt;
@@ -123,6 +124,7 @@ impl MessageProcessor {
         // Stream response - lock is held during entire streaming
         let mut stream = agent.receive_response();
         let mut final_result = String::new();
+        let mut result_message = None;
         let mut message_count = 0;
 
         while let Some(message) = stream.next().await {
@@ -132,7 +134,8 @@ impl MessageProcessor {
             let message = message.map_err(|e| SlackCoderError::ClaudeAgent(e.to_string()))?;
 
             if let ClaudeMessage::Result(res) = message {
-                final_result = res.result.unwrap_or_default();
+                final_result = res.result.clone().unwrap_or_default();
+                result_message = Some(res);
                 tracing::info!(
                     "✅ Received final result {} ({} chars)",
                     channel.log_format(),
@@ -182,6 +185,36 @@ impl MessageProcessor {
             }
 
             tracing::info!("✅ Response sent {}", channel.log_format());
+
+            // Send metrics and completion notification if we have result message
+            if let Some(result_msg) = result_message {
+                // Extract and send usage metrics
+                let metrics = UsageMetrics::from_result_message(&result_msg);
+                tracing::info!(
+                    "📊 Sending metrics {} (tokens: {}, cost: ${:.4})",
+                    channel.log_format(),
+                    metrics.total_tokens,
+                    metrics.cost_usd.unwrap_or(0.0)
+                );
+
+                if let Err(e) = self
+                    .slack_client
+                    .send_metrics(channel, thread_ts, &metrics)
+                    .await
+                {
+                    tracing::warn!("Failed to send metrics: {}", e);
+                }
+
+                // Send completion notification
+                tracing::info!("✅ Sending completion alert {}", channel.log_format());
+                if let Err(e) = self
+                    .slack_client
+                    .send_completion_alert(channel, thread_ts)
+                    .await
+                {
+                    tracing::warn!("Failed to send completion alert: {}", e);
+                }
+            }
         } else {
             tracing::warn!("⚠️  No response from agent {}", channel.log_format());
         }

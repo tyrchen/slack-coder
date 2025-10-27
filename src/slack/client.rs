@@ -1,6 +1,6 @@
 use crate::config::SlackConfig;
 use crate::error::{Result, SlackCoderError};
-use crate::slack::{ChannelId, MessageTs, ThreadTs};
+use crate::slack::{ChannelId, MessageTs, ThreadTs, UsageMetrics};
 use slack_morphism::prelude::*;
 use std::sync::Arc;
 
@@ -139,5 +139,36 @@ impl SlackClient {
         }
 
         Ok(channels)
+    }
+
+    /// Send usage metrics as a formatted message
+    pub async fn send_metrics(
+        &self,
+        channel: &ChannelId,
+        thread_ts: Option<&ThreadTs>,
+        metrics: &UsageMetrics,
+    ) -> Result<MessageTs> {
+        let text = metrics.format_slack_message();
+        self.send_message(channel, &text, thread_ts).await
+    }
+
+    /// Send completion notification
+    pub async fn send_completion_alert(
+        &self,
+        channel: &ChannelId,
+        thread_ts: Option<&ThreadTs>,
+    ) -> Result<MessageTs> {
+        let text = "✅ *Task Complete* - All operations finished!";
+        self.send_message(channel, text, thread_ts).await
+    }
+
+    /// Send shutdown notification
+    pub async fn send_shutdown_notice(
+        &self,
+        channel: &ChannelId,
+        session_id: &str,
+    ) -> Result<MessageTs> {
+        let text = format!("🔴 *Agent Gone*\n\nSession ID: `{}` ended", session_id);
+        self.send_message(channel, &text, None).await
     }
 }
