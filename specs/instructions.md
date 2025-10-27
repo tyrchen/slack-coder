@@ -180,7 +180,7 @@ resolutions: [] }) }) }, subtype: None, hidden: None, message: None, previous_me
 
 Think this through, generate a implement plan doc in ./specs and implement it entirely
 
-## The busy message
+## The busy message *
 
 This message should be a reply message to the user's original message, to make the message history clean and more readable.
 
@@ -190,7 +190,7 @@ Your message has been received, but the agent is busy with a previous task. Plea
 Tip: Long-running tasks (like comprehensive code analysis or documentation) can take several minutes. You can check the latest progress update above.
 ```
 
-## Main agent doesn't show todo tasks
+## Main agent doesn't show todo tasks *
 
 Help me understand why the main agent doesn't show todo tasks. If you identified the root cause, make a plan and execute it.
 
@@ -222,3 +222,12 @@ logs:
 2025-10-27T14:58:26.524258Z  INFO slack_coder::agent::manager: 95: ✅ Connected to Claude
 2025-10-27T14:58:26.524303Z  INFO slack_coder::agent::manager: 97: 🚀 Running repository setup (this may take 1-2 minutes)...
 ```
+
+## improve logging
+
+you probably need a struct to store metadata on ChannelInfo which contains channel_id, hashmap of user_id -> username, and other important metadata. Write it down and generate a doc with concrete design and implement plan in ./specs.
+
+## notification improvement
+
+starting (restoring agents) and stopping (graceful message) could all be done in parallel. Also remove channel specific (agent start/stop) notifications, only do one notification after all agents restored, and one notification after all agent shutdown. Also when a full task finished, right now send result, metrics, etc. And each of those have a notification, it should only generate one notification.
+Think hard on it make a good plan and execute

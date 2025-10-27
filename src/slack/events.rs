@@ -1,5 +1,6 @@
 use crate::agent::AgentManager;
 use crate::error::Result;
+use crate::metadata::MetadataCache;
 use crate::slack::{
     ChannelId, FormHandler, MessageProcessor, MessageTs, SlackClient, SlackMessage, ThreadTs,
     UserId,
@@ -25,19 +26,26 @@ struct BotState {
     message_processor: Arc<MessageProcessor>,
     form_handler: Arc<FormHandler>,
     slack_client: Arc<SlackClient>,
+    metadata_cache: Arc<MetadataCache>,
     processed_events: Arc<DashMap<String, Instant>>,
 }
 
 pub struct EventHandler {
     slack_client: Arc<SlackClient>,
     agent_manager: Arc<AgentManager>,
+    metadata_cache: Arc<MetadataCache>,
 }
 
 impl EventHandler {
-    pub fn new(slack_client: Arc<SlackClient>, agent_manager: Arc<AgentManager>) -> Self {
+    pub fn new(
+        slack_client: Arc<SlackClient>,
+        agent_manager: Arc<AgentManager>,
+        metadata_cache: Arc<MetadataCache>,
+    ) -> Self {
         Self {
             slack_client,
             agent_manager,
+            metadata_cache,
         }
     }
 
@@ -53,6 +61,7 @@ impl EventHandler {
         let message_processor = Arc::new(MessageProcessor::new(
             self.slack_client.clone(),
             self.agent_manager.clone(),
+            self.metadata_cache.clone(),
         ));
         let form_handler = Arc::new(FormHandler::new(
             self.slack_client.clone(),
@@ -63,6 +72,7 @@ impl EventHandler {
             message_processor,
             form_handler,
             slack_client: self.slack_client.clone(),
+            metadata_cache: self.metadata_cache.clone(),
             processed_events,
         };
 
@@ -163,25 +173,51 @@ impl EventHandler {
 
                 let channel_id = ChannelId::new(mention.channel.to_string());
 
+                let text = mention.content.text.clone().unwrap_or_default();
+                let user_id = UserId::new(mention.user.to_string());
+
+                // Get enriched context with channel and user names
+                let ctx = state
+                    .metadata_cache
+                    .log_context(channel_id.as_str(), mention.user.as_ref())
+                    .await;
+
                 let span = tracing::info_span!(
                     "app_mention",
-                    channel = %channel_id.as_str(),
-                    user = %mention.user,
+                    channel_id = %ctx.channel_id,
+                    channel = %ctx.channel_name,
+                    user_id = %ctx.user_id,
+                    user = %ctx.user_name,
                     ts = %mention.origin.ts
                 );
                 let _guard = span.enter();
 
-                tracing::info!("App mentioned in channel");
+                // Show first 150 chars of message for context
+                let message_preview = if text.len() > 150 {
+                    format!("{}...", text.chars().take(150).collect::<String>())
+                } else {
+                    text.clone()
+                };
+
+                tracing::info!(
+                    channel_id = %ctx.channel_id,
+                    channel = %ctx.channel_display,
+                    user_id = %ctx.user_id,
+                    user = %ctx.user_display,
+                    message = %message_preview,
+                    "App mentioned in {} by {}: \"{}\"",
+                    ctx.channel_display,
+                    ctx.user_display,
+                    message_preview
+                );
 
                 // Log selective fields instead of full debug dump
                 tracing::debug!(
-                    text_len = mention.content.text.as_ref().map(|t| t.len()).unwrap_or(0),
+                    text_len = text.len(),
                     has_blocks = mention.content.blocks.is_some(),
                     thread_ts = ?mention.origin.thread_ts,
                     "App mention details"
                 );
-                let user_id = UserId::new(mention.user.to_string());
-                let text = mention.content.text.clone().unwrap_or_default();
                 let ts = MessageTs::new(mention.origin.ts.to_string());
                 let thread_ts = mention
                     .origin

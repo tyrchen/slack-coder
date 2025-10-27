@@ -1,8 +1,10 @@
 use crate::config::SlackConfig;
 use crate::error::{Result, SlackCoderError};
+use crate::metadata::{ChannelInfo, ChannelType, UserInfo};
 use crate::slack::{ChannelId, MessageTs, ThreadTs, UsageMetrics};
 use slack_morphism::prelude::*;
 use std::sync::Arc;
+use std::time::Instant;
 
 pub struct SlackClient {
     client: Arc<SlackHyperClient>,
@@ -170,5 +172,71 @@ impl SlackClient {
     ) -> Result<MessageTs> {
         let text = format!("🔴 *Agent Gone*\n\nSession ID: `{}` ended", session_id);
         self.send_message(channel, &text, None).await
+    }
+
+    /// Get channel information from Slack API
+    pub async fn get_channel_info(&self, channel_id: &str) -> Result<ChannelInfo> {
+        let session = self.client.open_session(&self.token);
+
+        let request = SlackApiConversationsInfoRequest::new(SlackChannelId(channel_id.to_string()));
+
+        let response = session
+            .conversations_info(&request)
+            .await
+            .map_err(|e| SlackCoderError::SlackApi(e.to_string()))?;
+
+        let channel = response.channel;
+
+        // Determine channel type
+        let channel_type = if channel.flags.is_channel.unwrap_or(false) {
+            if channel.flags.is_private.unwrap_or(false) {
+                ChannelType::PrivateChannel
+            } else {
+                ChannelType::PublicChannel
+            }
+        } else if channel.flags.is_im.unwrap_or(false) {
+            ChannelType::DirectMessage
+        } else if channel.flags.is_mpim.unwrap_or(false) {
+            ChannelType::MultiPartyDirectMessage
+        } else {
+            ChannelType::PublicChannel // Default fallback
+        };
+
+        Ok(ChannelInfo {
+            id: channel.id.to_string(),
+            name: channel.name.unwrap_or_else(|| channel_id.to_string()),
+            channel_type,
+            is_private: channel.flags.is_private.unwrap_or(false),
+            member_count: channel.num_members.map(|n| n as u32),
+            fetched_at: Instant::now(),
+            topic: channel.topic.map(|t| t.value),
+        })
+    }
+
+    /// Get user information from Slack API
+    pub async fn get_user_info(&self, user_id: &str) -> Result<UserInfo> {
+        let session = self.client.open_session(&self.token);
+
+        let request = SlackApiUsersInfoRequest::new(SlackUserId(user_id.to_string()));
+
+        let response = session
+            .users_info(&request)
+            .await
+            .map_err(|e| SlackCoderError::SlackApi(e.to_string()))?;
+
+        let user = response.user;
+
+        Ok(UserInfo {
+            id: user.id.to_string(),
+            name: user.name.unwrap_or_else(|| user_id.to_string()),
+            real_name: user.real_name,
+            display_name: user.profile.as_ref().and_then(|p| p.display_name.clone()),
+            email: user
+                .profile
+                .as_ref()
+                .and_then(|p| p.email.as_ref().map(|e| e.to_string())),
+            is_bot: user.flags.is_bot.unwrap_or(false),
+            fetched_at: Instant::now(),
+        })
     }
 }
