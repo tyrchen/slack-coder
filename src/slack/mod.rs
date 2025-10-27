@@ -1,4 +1,5 @@
 mod client;
+mod commands;
 mod events;
 mod forms;
 mod markdown;
@@ -7,6 +8,7 @@ mod progress;
 mod types;
 
 pub use client::SlackClient;
+pub use commands::SlackCommandHandler;
 pub use events::EventHandler;
 pub use forms::FormHandler;
 pub use markdown::markdown_to_slack;

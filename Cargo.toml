@@ -1,6 +1,6 @@
 [package]
 name = "slack-coder"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Tyr Chen <tyr.chen@gmail.com>"]
 edition = "2024"
 license = "MIT"
@@ -58,6 +58,7 @@ dotenvy = "0.15"
 # Utilities
 chrono = "0.4"
 regex = "1"
+uuid = { version = "1.18", features = ["v4"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

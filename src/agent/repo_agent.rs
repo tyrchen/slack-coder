@@ -1,6 +1,7 @@
 use crate::agent::{Plan, create_todo_hooks};
 use crate::config::Settings;
 use crate::error::{Result, SlackCoderError};
+use crate::session::{SessionId, generate_session_id};
 use crate::slack::{ChannelId, ProgressTracker};
 use crate::storage::Workspace;
 use claude_agent_sdk_rs::{
@@ -14,6 +15,7 @@ pub struct RepoAgent {
     client: ClaudeClient,
     plan: Arc<Mutex<Plan>>,
     channel_id: ChannelId,
+    current_session_id: Arc<RwLock<SessionId>>,
     last_activity: Arc<RwLock<Instant>>,
 }
 
@@ -58,10 +60,19 @@ impl RepoAgent {
 
         let client = ClaudeClient::new(options);
 
+        // Generate initial session ID
+        let session_id = generate_session_id(&channel_id);
+        tracing::info!(
+            "Generated session ID: {} for {}",
+            session_id,
+            channel_id.log_format()
+        );
+
         Ok(Self {
             client,
             plan,
             channel_id,
+            current_session_id: Arc::new(RwLock::new(session_id)),
             last_activity: Arc::new(RwLock::new(Instant::now())),
         })
     }
@@ -76,12 +87,17 @@ impl RepoAgent {
         Ok(())
     }
 
-    /// Send query to agent
+    /// Send query to agent with session management
     pub async fn query(&mut self, message: &str) -> Result<()> {
+        let session_id = self.current_session_id.read().unwrap().clone();
+
+        tracing::debug!("Sending query with session_id: {}", session_id);
+
         self.client
-            .query(message)
+            .query_with_session(message, session_id)
             .await
             .map_err(|e| SlackCoderError::ClaudeAgent(e.to_string()))?;
+
         self.update_activity();
         Ok(())
     }
@@ -118,6 +134,32 @@ impl RepoAgent {
     /// Get channel ID
     pub fn channel_id(&self) -> &ChannelId {
         &self.channel_id
+    }
+
+    /// Start a new session (clears conversation context)
+    pub async fn start_new_session(&mut self) -> Result<SessionId> {
+        let new_session_id = generate_session_id(&self.channel_id);
+
+        tracing::info!(
+            "Starting new session: {} for {}",
+            new_session_id,
+            self.channel_id.log_format()
+        );
+
+        *self.current_session_id.write().unwrap() = new_session_id.clone();
+
+        // Clear the todo plan for the new session
+        if let Ok(mut plan) = self.plan.lock() {
+            *plan = Plan::new();
+        }
+
+        self.update_activity();
+        Ok(new_session_id)
+    }
+
+    /// Get current session ID
+    pub fn get_session_id(&self) -> SessionId {
+        self.current_session_id.read().unwrap().clone()
     }
 
     /// Disconnect from Claude API
