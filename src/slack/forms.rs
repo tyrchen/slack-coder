@@ -35,18 +35,21 @@ Reply with your repository name to begin setup."#;
 
     /// Handle repository setup from user message
     pub async fn handle_repo_setup(&self, channel: ChannelId, repo_name: String) -> Result<()> {
+        use std::time::Instant;
+        let start = Instant::now();
+
         tracing::info!(
-            "🔧 Starting repository setup {} repo={}",
+            "🔧 Starting repository setup {} repo='{}'",
             channel.log_format(),
             repo_name
         );
 
         // Validate repo name format
         let (owner, repo) = Self::validate_repo_name_format(&repo_name)?;
-        tracing::debug!("✅ Validated format: owner={}, repo={}", owner, repo);
+        tracing::debug!("  ✅ Validated format: owner='{}', repo='{}'", owner, repo);
 
         // Send acknowledgment
-        tracing::debug!("Sending acknowledgment to Slack...");
+        tracing::debug!("  📤 Sending acknowledgment to Slack...");
         self.slack_client
             .send_message(
                 &channel,
@@ -54,17 +57,21 @@ Reply with your repository name to begin setup."#;
                 None,
             )
             .await?;
-        tracing::info!("✅ Acknowledgment sent");
+        tracing::debug!("  ✅ Acknowledgment sent");
 
         // Trigger setup via agent manager
-        tracing::info!("🚀 Invoking agent manager to setup channel...");
+        tracing::info!("  🚀 Invoking AgentManager to setup channel...");
+        let setup_start = Instant::now();
         self.agent_manager
             .setup_channel(channel.clone(), repo_name.clone())
             .await?;
-        tracing::info!("✅ Agent setup completed");
+        tracing::info!(
+            "  ✅ Agent setup completed (setup_duration={:?})",
+            setup_start.elapsed()
+        );
 
         // Send completion message with proper formatting
-        tracing::debug!("Sending completion message...");
+        tracing::debug!("  📤 Sending completion message...");
         let completion_msg = format!(
             ":white_check_mark: *Repository `{}` is now ready!*\n\n\
             You can now ask me to:\n\
@@ -80,7 +87,12 @@ Reply with your repository name to begin setup."#;
         self.slack_client
             .send_message(&channel, &completion_msg, None)
             .await?;
-        tracing::info!("🎉 Setup workflow completed successfully");
+        tracing::info!(
+            "🎉 Setup workflow completed {} repo='{}' (total_duration={:?})",
+            channel.log_format(),
+            repo_name,
+            start.elapsed()
+        );
 
         Ok(())
     }

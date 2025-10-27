@@ -90,14 +90,34 @@ impl RepoAgent {
     /// Send query to agent with session management
     pub async fn query(&mut self, message: &str) -> Result<()> {
         let session_id = self.current_session_id.read().unwrap().clone();
+        let message_preview = message.chars().take(80).collect::<String>();
 
-        tracing::debug!("Sending query with session_id: {}", session_id);
+        tracing::info!(
+            "📤 Sending query to Claude {} session={} msg_length={} preview='{}'",
+            self.channel_id.log_format(),
+            session_id,
+            message.len(),
+            message_preview
+        );
 
         self.client
-            .query_with_session(message, session_id)
+            .query_with_session(message, session_id.clone())
             .await
-            .map_err(|e| SlackCoderError::ClaudeAgent(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(
+                    "❌ Claude query failed {} session={}: {}",
+                    self.channel_id.log_format(),
+                    session_id,
+                    e
+                );
+                SlackCoderError::ClaudeAgent(e.to_string())
+            })?;
 
+        tracing::debug!(
+            "  ✅ Query accepted by Claude {} session={}",
+            self.channel_id.log_format(),
+            session_id
+        );
         self.update_activity();
         Ok(())
     }
@@ -138,22 +158,31 @@ impl RepoAgent {
 
     /// Start a new session (clears conversation context)
     pub async fn start_new_session(&mut self) -> Result<SessionId> {
+        let old_session_id = self.current_session_id.read().unwrap().clone();
         let new_session_id = generate_session_id(&self.channel_id);
 
         tracing::info!(
-            "Starting new session: {} for {}",
-            new_session_id,
-            self.channel_id.log_format()
+            "🔄 Starting new session {} old_session={} new_session={}",
+            self.channel_id.log_format(),
+            old_session_id,
+            new_session_id
         );
 
         *self.current_session_id.write().unwrap() = new_session_id.clone();
 
         // Clear the todo plan for the new session
         if let Ok(mut plan) = self.plan.lock() {
+            let old_task_count = plan.todos.len();
             *plan = Plan::new();
+            tracing::debug!("  ✅ Cleared plan (removed {} tasks)", old_task_count);
         }
 
         self.update_activity();
+        tracing::info!(
+            "✅ New session started {} session={}",
+            self.channel_id.log_format(),
+            new_session_id
+        );
         Ok(new_session_id)
     }
 
