@@ -288,7 +288,9 @@ fn format_urls(text: &str) -> String {
     }
 
     // Now wrap remaining standalone URLs
-    let standalone_url_re = Regex::new(r"(https?://[^\s<>]+)").unwrap();
+    // Exclude markdown formatting characters (*_~) and whitespace from URL capture
+    // This prevents trailing asterisks from broken markdown being included in URLs
+    let standalone_url_re = Regex::new(r"(https?://[^\s<>\*_~]+)").unwrap();
     result = standalone_url_re.replace_all(&result, "<$1>").to_string();
 
     // Restore Slack links
@@ -441,4 +443,40 @@ mod tests {
         assert!(output.contains("`https://example.com`"));
         assert!(!output.contains("<https://example.com>"));
     }
+
+    #[test]
+    fn test_malformed_bold_with_url() {
+        // Test the actual issue: **text* url*
+        let input = "**Pull Request Created:* https://github.com/tyrchen/excaliapp/pull/4*";
+        let output = markdown_to_slack(input);
+        eprintln!("Input: {}", input);
+        eprintln!("Output: {}", output);
+        // URL should be wrapped without the trailing *
+        assert!(output.contains("<https://github.com/tyrchen/excaliapp/pull/4>"));
+        assert!(!output.contains("/pull/4*>"));
+        assert!(!output.contains("/pull/4*"));
+    }
+
+    #[test]
+    fn test_url_with_trailing_asterisk() {
+        // URL followed by asterisk
+        let input = "Link: https://example.com/page*";
+        let output = markdown_to_slack(input);
+        // URL should NOT include the trailing *
+        assert!(output.contains("<https://example.com/page>"));
+        assert!(!output.contains("/page*>"));
+    }
+
+    #[test]
+    fn test_url_with_query_params() {
+        // URL with query parameters should work correctly
+        let input = "Check https://github.com/user/repo/pull/4?tab=files for changes";
+        let output = markdown_to_slack(input);
+        assert!(output.contains("<https://github.com/user/repo/pull/4?tab=files>"));
+    }
+
+    // NOTE: URLs with parentheses in markdown links are an edge case that would require
+    // balanced parentheses matching. For now, use standalone URLs without parentheses,
+    // or URL-encode the parentheses as %28 and %29.
+    // Example that works: https://example.com/page%28test%29
 }

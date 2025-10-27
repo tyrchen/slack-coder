@@ -6,6 +6,8 @@ use crate::slack::{
 use claude_agent_sdk_rs::Message as ClaudeMessage;
 use futures::StreamExt;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::timeout;
 
 pub struct MessageProcessor {
     slack_client: Arc<SlackClient>,
@@ -74,14 +76,42 @@ impl MessageProcessor {
         tracing::debug!("Getting agent {}...", channel.log_format());
         // Get agent from manager (returns Arc<Mutex<RepoAgent>>)
         let agent_mutex = self.agent_manager.get_repo_agent(channel).await?;
-        tracing::debug!("  Got agent, acquiring lock...");
 
-        // Lock agent for this request
-        let mut agent = agent_mutex.lock().await;
-        tracing::info!(
-            "🔒 Agent locked {}, sending query to Claude...",
-            channel.log_format()
-        );
+        tracing::debug!("  Got agent, attempting to acquire lock with timeout...");
+
+        // Try to acquire lock with timeout to avoid blocking forever
+        let agent_lock = timeout(Duration::from_secs(3), agent_mutex.lock()).await;
+
+        let mut agent = match agent_lock {
+            Ok(agent) => {
+                tracing::info!(
+                    "🔒 Agent locked {}, sending query to Claude...",
+                    channel.log_format()
+                );
+                agent
+            }
+            Err(_) => {
+                tracing::warn!(
+                    "⏳ Agent busy {}, lock acquisition timed out after 3s",
+                    channel.log_format()
+                );
+
+                // Send user-friendly message
+                self.slack_client
+                    .send_message(
+                        channel,
+                        "⏳ *Agent is currently processing another request*\n\n\
+                         Your message has been received, but the agent is busy with a previous task. \
+                         Please wait for the current task to complete and try again in a moment.\n\n\
+                         *Tip*: Long-running tasks (like comprehensive code analysis or documentation) \
+                         can take several minutes. You can check the latest progress update above.",
+                        thread_ts,
+                    )
+                    .await?;
+
+                return Ok(());
+            }
+        };
 
         // Send query to agent
         agent.query(text).await?;
@@ -90,7 +120,7 @@ impl MessageProcessor {
             channel.log_format()
         );
 
-        // Stream response
+        // Stream response - lock is held during entire streaming
         let mut stream = agent.receive_response();
         let mut final_result = String::new();
         let mut message_count = 0;
