@@ -83,16 +83,22 @@ The repository name provided by the user is: {}"#,
         let mut stream = self.client.receive_response();
         let mut final_result = String::new();
 
+        // Consume ENTIRE stream to ensure all hooks fire and progress updates work
         while let Some(message) = stream.next().await {
             let message = message.map_err(|e| SlackCoderError::ClaudeAgent(e.to_string()))?;
 
+            // Capture result but DON'T break - continue processing stream
             if let claude_agent_sdk_rs::Message::Result(res) = message {
                 final_result = res.result.unwrap_or_default();
-                break;
+                tracing::debug!("Received result message, continuing stream processing for hooks");
             }
+            // Stream continues until it naturally ends, allowing all hooks to execute
         }
 
-        tracing::info!("Setup completed: {}", final_result);
+        tracing::info!(
+            result_len = final_result.len(),
+            "Setup stream processing complete"
+        );
         Ok(())
     }
 
