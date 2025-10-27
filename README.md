@@ -832,49 +832,49 @@ Current: Generating endpoint
 ```mermaid
 graph TB
     subgraph "Application Entry"
-        MAIN[main.rs<br/>Bot Initialization]
-        LIB[lib.rs<br/>Module Exports]
+        MAIN["main.rs<br/>Bot Initialization"]
+        LIB["lib.rs<br/>Module Exports"]
     end
 
     subgraph "Configuration Module"
-        CONF[config/settings.rs<br/>Environment Variables<br/>Settings Struct]
+        CONF["config/settings.rs<br/>Environment Variables<br/>Settings Struct"]
     end
 
     subgraph "Error Handling"
-        ERR[error.rs<br/>SlackCoderError<br/>Result Type]
+        ERR["error.rs<br/>SlackCoderError<br/>Result Type"]
     end
 
     subgraph "Slack Module"
-        CLIENT[client.rs<br/>SlackClient<br/>API Wrapper]
-        EVENTS[events.rs<br/>EventHandler<br/>Socket Mode Listener]
-        MSGS[messages.rs<br/>MessageProcessor<br/>Query Router]
-        FORMS[forms.rs<br/>FormHandler<br/>Setup Flow]
-        CMDS[commands.rs<br/>CommandHandler<br/>/help, /new-session]
-        PROG[progress.rs<br/>ProgressTracker<br/>TodoWrite Display]
-        MDCONV[markdown.rs<br/>markdown_to_slack()<br/>Format Converter]
-        TYPES[types.rs<br/>ChannelId, UserId<br/>MessageTs, ThreadTs]
+        CLIENT["client.rs<br/>SlackClient<br/>API Wrapper"]
+        EVENTS["events.rs<br/>EventHandler<br/>Socket Mode Listener"]
+        MSGS["messages.rs<br/>MessageProcessor<br/>Query Router"]
+        FORMS["forms.rs<br/>FormHandler<br/>Setup Flow"]
+        CMDS["commands.rs<br/>CommandHandler<br/>help and new-session"]
+        PROG["progress.rs<br/>ProgressTracker<br/>TodoWrite Display"]
+        MDCONV["markdown.rs<br/>Markdown to Slack<br/>Format Converter"]
+        TYPES["types.rs<br/>ChannelId UserId<br/>MessageTs ThreadTs"]
     end
 
     subgraph "Agent Module"
-        MGR[manager.rs<br/>AgentManager<br/>Lifecycle & Pool]
-        MAIN_AG[main_agent.rs<br/>MainAgent<br/>Repository Setup]
-        REPO_AG[repo_agent.rs<br/>RepoAgent<br/>Code Generation]
-        HOOKS[hooks.rs<br/>create_todo_hooks()<br/>PostToolUse Handler]
-        AG_TYPES[types.rs<br/>Plan, Task<br/>TaskStatus]
+        MGR["manager.rs<br/>AgentManager<br/>Lifecycle and Pool"]
+        MAIN_AG["main_agent.rs<br/>MainAgent<br/>Repository Setup"]
+        REPO_AG["repo_agent.rs<br/>RepoAgent<br/>Code Generation"]
+        HOOKS["hooks.rs<br/>create_todo_hooks<br/>PostToolUse Handler"]
+        AG_TYPES["types.rs<br/>Plan Task<br/>TaskStatus"]
     end
 
     subgraph "Storage Module"
-        WS[workspace.rs<br/>Workspace<br/>Path Manager]
+        WS["workspace.rs<br/>Workspace<br/>Path Manager"]
     end
 
     subgraph "Session Module"
-        SESS[session.rs<br/>SessionId<br/>generate_session_id()]
+        SESS["session.rs<br/>SessionId<br/>generate_session_id"]
     end
 
     subgraph "External Dependencies"
-        CLAUDE[claude-agent-sdk-rs<br/>ClaudeClient<br/>ClaudeAgentOptions]
-        SLACK_M[slack-morphism<br/>Socket Mode<br/>Events API]
-        DASHMAP[dashmap<br/>DashMap<br/>Concurrent HashMap]
+        CLAUDE["claude-agent-sdk-rs<br/>ClaudeClient<br/>ClaudeAgentOptions"]
+        SLACK_M["slack-morphism<br/>Socket Mode<br/>Events API"]
+        DASHMAP["dashmap<br/>DashMap<br/>Concurrent HashMap"]
     end
 
     MAIN --> CONF

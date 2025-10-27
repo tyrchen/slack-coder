@@ -832,49 +832,49 @@ sequenceDiagram
 ```mermaid
 graph TB
     subgraph "应用入口"
-        MAIN[main.rs<br/>Bot 初始化]
-        LIB[lib.rs<br/>模块导出]
+        MAIN["main.rs<br/>Bot 初始化"]
+        LIB["lib.rs<br/>模块导出"]
     end
 
     subgraph "配置模块"
-        CONF[config/settings.rs<br/>环境变量<br/>Settings 结构]
+        CONF["config/settings.rs<br/>环境变量<br/>Settings 结构"]
     end
 
     subgraph "错误处理"
-        ERR[error.rs<br/>SlackCoderError<br/>Result 类型]
+        ERR["error.rs<br/>SlackCoderError<br/>Result 类型"]
     end
 
     subgraph "Slack 模块"
-        CLIENT[client.rs<br/>SlackClient<br/>API 包装器]
-        EVENTS[events.rs<br/>EventHandler<br/>Socket Mode 监听器]
-        MSGS[messages.rs<br/>MessageProcessor<br/>查询路由器]
-        FORMS[forms.rs<br/>FormHandler<br/>设置流程]
-        CMDS[commands.rs<br/>CommandHandler<br/>/help, /new-session]
-        PROG[progress.rs<br/>ProgressTracker<br/>TodoWrite 显示]
-        MDCONV[markdown.rs<br/>markdown_to_slack()<br/>格式转换器]
-        TYPES[types.rs<br/>ChannelId, UserId<br/>MessageTs, ThreadTs]
+        CLIENT["client.rs<br/>SlackClient<br/>API 包装器"]
+        EVENTS["events.rs<br/>EventHandler<br/>Socket Mode 监听器"]
+        MSGS["messages.rs<br/>MessageProcessor<br/>查询路由器"]
+        FORMS["forms.rs<br/>FormHandler<br/>设置流程"]
+        CMDS["commands.rs<br/>CommandHandler<br/>help 和 new-session"]
+        PROG["progress.rs<br/>ProgressTracker<br/>TodoWrite 显示"]
+        MDCONV["markdown.rs<br/>Markdown 转 Slack<br/>格式转换器"]
+        TYPES["types.rs<br/>ChannelId UserId<br/>MessageTs ThreadTs"]
     end
 
     subgraph "Agent 模块"
-        MGR[manager.rs<br/>AgentManager<br/>生命周期 & 池]
-        MAIN_AG[main_agent.rs<br/>MainAgent<br/>仓库设置]
-        REPO_AG[repo_agent.rs<br/>RepoAgent<br/>代码生成]
-        HOOKS[hooks.rs<br/>create_todo_hooks()<br/>PostToolUse 处理器]
-        AG_TYPES[types.rs<br/>Plan, Task<br/>TaskStatus]
+        MGR["manager.rs<br/>AgentManager<br/>生命周期和池"]
+        MAIN_AG["main_agent.rs<br/>MainAgent<br/>仓库设置"]
+        REPO_AG["repo_agent.rs<br/>RepoAgent<br/>代码生成"]
+        HOOKS["hooks.rs<br/>create_todo_hooks<br/>PostToolUse 处理器"]
+        AG_TYPES["types.rs<br/>Plan Task<br/>TaskStatus"]
     end
 
     subgraph "存储模块"
-        WS[workspace.rs<br/>Workspace<br/>路径管理器]
+        WS["workspace.rs<br/>Workspace<br/>路径管理器"]
     end
 
     subgraph "会话模块"
-        SESS[session.rs<br/>SessionId<br/>generate_session_id()]
+        SESS["session.rs<br/>SessionId<br/>generate_session_id"]
     end
 
     subgraph "外部依赖"
-        CLAUDE[claude-agent-sdk-rs<br/>ClaudeClient<br/>ClaudeAgentOptions]
-        SLACK_M[slack-morphism<br/>Socket Mode<br/>Events API]
-        DASHMAP[dashmap<br/>DashMap<br/>并发 HashMap]
+        CLAUDE["claude-agent-sdk-rs<br/>ClaudeClient<br/>ClaudeAgentOptions"]
+        SLACK_M["slack-morphism<br/>Socket Mode<br/>Events API"]
+        DASHMAP["dashmap<br/>DashMap<br/>并发 HashMap"]
     end
 
     MAIN --> CONF
