@@ -100,8 +100,7 @@ impl MessageProcessor {
         // Use existing thread_ts if in thread, otherwise use message ts to create thread
         let reply_thread_ts = message
             .thread_ts
-            .as_ref()
-            .map(|t| t.clone())
+            .clone()
             .unwrap_or_else(|| ThreadTs::new(message.ts.as_str()));
 
         self.forward_to_agent(

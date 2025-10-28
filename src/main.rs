@@ -85,36 +85,38 @@ async fn main() -> Result<()> {
     let shutdown_agent_manager = agent_manager.clone();
     let shutdown_slack_client = slack_client.clone();
 
-    // Setup shutdown signal handler in background
-    let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<String>(1);
+    // Use a channel to signal when shutdown notifications are complete
+    let (shutdown_complete_tx, mut shutdown_complete_rx) = tokio::sync::mpsc::channel::<()>(1);
+
+    // Setup shutdown signal handler
     tokio::spawn(async move {
         let signal_name = setup_shutdown_handler().await;
-        let _ = shutdown_tx.send(signal_name).await;
+        tracing::info!(
+            signal = %signal_name,
+            "Received shutdown signal, initiating graceful shutdown"
+        );
+
+        // Send shutdown notifications - this MUST complete before we exit
+        shutdown_gracefully(&shutdown_agent_manager, &shutdown_slack_client).await;
+
+        tracing::info!("Graceful shutdown complete");
+
+        // Signal that shutdown is complete
+        let _ = shutdown_complete_tx.send(()).await;
     });
 
-    // Run application with shutdown handling
-    let shutdown_result = tokio::select! {
-        result = event_handler.start() => {
-            tracing::info!("Event handler completed normally");
-            result
-        }
-        Some(signal_name) = shutdown_rx.recv() => {
-            tracing::info!(
-                signal = %signal_name,
-                "Received shutdown signal, initiating graceful shutdown"
-            );
+    // Run event handler - it will stop when signal arrives
+    let event_result = event_handler.start().await;
 
-            // Send shutdown notifications and cleanup agents
-            shutdown_gracefully(&shutdown_agent_manager, &shutdown_slack_client).await;
+    tracing::info!("Event handler stopped, waiting for shutdown notifications to complete");
 
-            tracing::info!("Graceful shutdown complete");
-            Ok(())
-        }
-    };
+    // CRITICAL: Wait for shutdown notifications to finish before exiting
+    // This blocks the main thread from exiting, keeping the tokio runtime alive
+    // so DNS and HTTP requests can complete
+    let _ = shutdown_complete_rx.recv().await;
 
-    // Ensure we wait for everything to complete
-    tracing::info!("Application shutdown sequence complete");
-    shutdown_result
+    tracing::info!("Shutdown notifications complete, exiting");
+    event_result
 }
 
 /// Setup signal handlers for graceful shutdown

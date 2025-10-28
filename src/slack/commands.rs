@@ -19,12 +19,21 @@ impl SlackCommandHandler {
         channel: &ChannelId,
         agent_manager: &AgentManager,
     ) -> Result<()> {
-        tracing::info!("Handling command: {} in {}", command, channel.log_format());
+        tracing::info!(
+            "🎯 Handling command {} command='{}'",
+            channel.log_format(),
+            command
+        );
 
-        match command.trim() {
+        let result = match command.trim() {
             "/help" => self.handle_help(channel).await,
             "/new-session" => self.handle_new_session(channel, agent_manager).await,
             _ => {
+                tracing::warn!(
+                    "  ❓ Unknown command {} command='{}'",
+                    channel.log_format(),
+                    command
+                );
                 self.slack_client
                     .send_message(
                         channel,
@@ -37,7 +46,24 @@ impl SlackCommandHandler {
                     .await?;
                 Ok(())
             }
+        };
+
+        if result.is_ok() {
+            tracing::info!(
+                "  ✅ Command completed {} command='{}'",
+                channel.log_format(),
+                command
+            );
+        } else {
+            tracing::error!(
+                "  ❌ Command failed {} command='{}': {:?}",
+                channel.log_format(),
+                command,
+                result
+            );
         }
+
+        result
     }
 
     /// Handle /help command
@@ -66,8 +92,14 @@ impl SlackCommandHandler {
         channel: &ChannelId,
         agent_manager: &AgentManager,
     ) -> Result<()> {
+        tracing::debug!("  🔍 Checking for agent {}...", channel.log_format());
+
         // Check if agent exists for this channel
         if !agent_manager.has_agent(channel) {
+            tracing::warn!(
+                "  ⚠️  No agent found {} for /new-session",
+                channel.log_format()
+            );
             self.slack_client
                 .send_message(
                     channel,
@@ -79,8 +111,16 @@ impl SlackCommandHandler {
         }
 
         // Get agent and start new session
+        tracing::debug!("  🔒 Acquiring agent lock {}...", channel.log_format());
         let agent_mutex = agent_manager.get_repo_agent(channel).await?;
         let mut agent = agent_mutex.lock().await;
+
+        let old_session_id = agent.get_session_id();
+        tracing::info!(
+            "  🔄 Starting new session {} (clearing old_session={})",
+            channel.log_format(),
+            old_session_id
+        );
 
         let new_session_id = agent.start_new_session().await?;
 
@@ -102,9 +142,10 @@ Type `/help` for more commands."#,
         );
 
         tracing::info!(
-            "New session created: {} for {}",
-            new_session_id,
-            channel.log_format()
+            "  ✅ New session created {} old_session={} new_session={}",
+            channel.log_format(),
+            old_session_id,
+            new_session_id
         );
 
         self.slack_client
