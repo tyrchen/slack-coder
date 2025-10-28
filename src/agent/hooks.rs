@@ -9,9 +9,9 @@ pub fn create_todo_hooks(
     progress_tracker: Arc<ProgressTracker>,
     channel_id: ChannelId,
 ) -> Hooks {
-    tracing::info!(
-        "🎣 Creating TodoWrite hooks for {}",
-        channel_id.log_format()
+    tracing::debug!(
+        channel = %channel_id.as_str(),
+        "Creating TodoWrite hooks"
     );
     let mut hooks = Hooks::new();
 
@@ -28,52 +28,71 @@ pub fn create_todo_hooks(
             let channel = channel_id.clone();
 
             Box::pin(async move {
-                tracing::debug!("🪝 TodoWrite hook triggered!");
+                tracing::debug!("TodoWrite hook triggered");
                 if let HookInput::PostToolUse(post_tool) = input {
-                    tracing::debug!("  Tool name: {}", post_tool.tool_name);
-                    tracing::debug!("  Tool input: {}", post_tool.tool_input);
+                    tracing::debug!(
+                        tool_name = %post_tool.tool_name,
+                        input_len = post_tool.tool_input.to_string().len(),
+                        "Tool use invocation"
+                    );
 
                     // Parse TodoWrite tool input
                     match serde_json::from_value::<Plan>(post_tool.tool_input.clone()) {
                         Ok(new_plan) => {
-                            tracing::info!("✅ TodoWrite parsed: {} tasks", new_plan.todos.len());
+                            let completed = new_plan.todos.iter().filter(|t| t.status == TaskStatus::Completed).count();
+                            let in_progress = new_plan.todos.iter().filter(|t| t.status == TaskStatus::InProgress).count();
+                            let pending = new_plan.todos.iter().filter(|t| t.status == TaskStatus::Pending).count();
+
+                            tracing::info!(
+                                total_tasks = new_plan.todos.len(),
+                                completed = completed,
+                                in_progress = in_progress,
+                                pending = pending,
+                                "Parsed TodoWrite plan"
+                            );
 
                             // Update internal plan with timing tracking
                             let plan_to_display = if let Ok(mut p) = plan.lock() {
                                 p.update(new_plan.clone());
-                                tracing::debug!("  Updated internal plan with timing");
+                                tracing::debug!("Updated internal plan with timing");
                                 p.clone() // Use the plan with timing data
                             } else {
-                                tracing::warn!("  Failed to lock plan, using new_plan");
+                                tracing::warn!("Failed to lock plan, using new plan without timing");
                                 new_plan // Fallback to new_plan if lock fails
                             };
 
                             // Update Slack progress display with plan that includes timing
-                            tracing::info!(
-                                "📊 Updating Slack progress for {}",
-                                channel.log_format()
+                            tracing::debug!(
+                                channel = %channel.as_str(),
+                                "Updating Slack progress"
                             );
                             match tracker.update_progress(&channel, &plan_to_display).await {
-                                Ok(_) => tracing::info!("✅ Progress updated in Slack"),
-                                Err(e) => tracing::error!("❌ Failed to update progress: {}", e),
+                                Ok(_) => tracing::debug!("Progress updated in Slack"),
+                                Err(e) => tracing::error!(error = %e, "Failed to update progress"),
                             }
                         }
                         Err(e) => {
-                            tracing::error!("❌ Failed to parse TodoWrite input: {}", e);
-                            tracing::debug!("  Raw input: {}", post_tool.tool_input);
+                            tracing::error!(
+                                error = %e,
+                                input_preview = %post_tool.tool_input.to_string().chars().take(100).collect::<String>(),
+                                "Failed to parse TodoWrite input"
+                            );
                         }
                     }
                 } else {
-                    tracing::warn!("⚠️  Hook called but not PostToolUse: {:?}", input);
+                    tracing::warn!(
+                        input_type = std::any::type_name_of_val(&input),
+                        "Hook called with unexpected input type"
+                    );
                 }
                 HookJsonOutput::Sync(SyncHookJsonOutput::default())
             })
         },
     );
 
-    tracing::info!(
-        "✅ TodoWrite hooks registered for {}",
-        channel_clone.log_format()
+    tracing::debug!(
+        channel = %channel_clone.as_str(),
+        "TodoWrite hooks registered"
     );
     hooks
 }

@@ -33,74 +33,184 @@ impl AgentManager {
         })
     }
 
-    /// Scan Slack channels and restore existing agents from disk
+    /// Scan Slack channels and restore existing agents from disk (in parallel)
     pub async fn scan_and_restore_channels(&self, slack_client: &SlackClient) -> Result<()> {
-        tracing::info!("🔍 Scanning Slack channels for existing setups...");
+        let span = tracing::info_span!("scan_and_restore_channels");
+        let _guard = span.enter();
 
+        let start = std::time::Instant::now();
         let channels = slack_client.list_channels().await?;
-        tracing::info!("📊 Total channels to scan: {}", channels.len());
 
-        let mut restored_count = 0;
-        let mut skipped_count = 0;
-        let mut failed_count = 0;
+        tracing::info!(
+            total_channels = channels.len(),
+            "Scanning for existing setups"
+        );
 
-        for (idx, channel_id) in channels.iter().enumerate() {
-            tracing::debug!(
-                "  [{}/{}] Checking {}",
-                idx + 1,
-                channels.len(),
-                channel_id.log_format()
-            );
-
-            if self.workspace.is_channel_setup(channel_id).await {
-                tracing::info!("  ♻️  Found existing setup {}", channel_id.log_format());
-
-                match self.create_repo_agent(channel_id.clone()).await {
-                    Ok(agent) => {
-                        self.repo_agents
-                            .insert(channel_id.clone(), Arc::new(Mutex::new(agent)));
-                        tracing::info!("  ✅ Agent restored {}", channel_id.log_format());
-                        restored_count += 1;
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "  ⚠️  Failed to restore agent {}: {}",
-                            channel_id.log_format(),
-                            e
-                        );
-                        failed_count += 1;
-                    }
-                }
-            } else {
-                tracing::debug!("    {} not setup yet (skipping)", channel_id.log_format());
-                skipped_count += 1;
+        // Filter to channels that are setup
+        let mut setup_channels = Vec::new();
+        for channel_id in channels {
+            if self.workspace.is_channel_setup(&channel_id).await {
+                setup_channels.push(channel_id);
             }
         }
 
         tracing::info!(
-            "📈 Channel scan complete: restored={}, skipped={}, failed={}, total={}",
-            restored_count,
-            skipped_count,
-            failed_count,
-            channels.len()
+            setup_count = setup_channels.len(),
+            "Found channels with existing setup"
         );
+
+        if setup_channels.is_empty() {
+            tracing::info!("No channels to restore");
+            return Ok(());
+        }
+
+        // Restore all agents in parallel
+        let restore_futures: Vec<_> = setup_channels
+            .into_iter()
+            .map(|channel_id| {
+                let workspace = self.workspace.clone();
+                let settings = self.settings.clone();
+                let progress_tracker = self.progress_tracker.clone();
+
+                async move {
+                    Self::create_repo_agent_static(
+                        channel_id.clone(),
+                        workspace,
+                        settings,
+                        progress_tracker,
+                    )
+                    .await
+                    .map(|agent| (channel_id.clone(), agent))
+                    .map_err(|e| (channel_id, e))
+                }
+            })
+            .collect();
+
+        tracing::info!(
+            agent_count = restore_futures.len(),
+            "Restoring agents in parallel"
+        );
+
+        let results = futures::future::join_all(restore_futures).await;
+
+        // Process results
+        let mut restored_count = 0;
+        let mut failed_count = 0;
+
+        for result in results {
+            match result {
+                Ok((channel_id, agent)) => {
+                    self.repo_agents
+                        .insert(channel_id.clone(), Arc::new(Mutex::new(agent)));
+                    restored_count += 1;
+                    tracing::debug!(
+                        channel_id = %channel_id.as_str(),
+                        "Agent restored"
+                    );
+                }
+                Err((channel_id, e)) => {
+                    failed_count += 1;
+                    tracing::warn!(
+                        channel_id = %channel_id.as_str(),
+                        error = %e,
+                        "Failed to restore agent"
+                    );
+                }
+            }
+        }
+
+        let duration = start.elapsed();
+        tracing::info!(
+            restored = restored_count,
+            failed = failed_count,
+            duration_ms = duration.as_millis() as u64,
+            "Agent restoration complete"
+        );
+
+        // Send startup notification to all restored channels in parallel
+        if restored_count > 0 {
+            self.send_startup_notifications().await;
+        }
+
         Ok(())
+    }
+
+    /// Send startup notifications to all channels with restored agents (in parallel)
+    async fn send_startup_notifications(&self) {
+        tracing::info!("Sending startup notifications to restored channels");
+
+        // Collect channel IDs and session IDs
+        let mut channel_sessions = Vec::new();
+        for entry in self.repo_agents.iter() {
+            let channel_id = entry.key().clone();
+
+            // Try to get session ID
+            if let Ok(agent) =
+                tokio::time::timeout(Duration::from_millis(100), entry.value().lock()).await
+            {
+                channel_sessions.push((channel_id, agent.get_session_id()));
+            }
+        }
+
+        tracing::debug!(
+            channel_count = channel_sessions.len(),
+            "Prepared startup notifications"
+        );
+
+        // Send notifications in parallel
+        let slack_client = self.progress_tracker.slack_client_ref();
+        let notification_futures: Vec<_> = channel_sessions
+            .into_iter()
+            .map(|(channel_id, session_id)| {
+                let client = slack_client.clone();
+                async move {
+                    let notification = format!(
+                        "🤖 *Agent Ready*\n\nSession ID: `{}`\n\nI'm ready to help with this repository! Type `/help` for available commands.",
+                        session_id
+                    );
+
+                    match client.send_message(&channel_id, &notification, None).await {
+                        Ok(_) => {
+                            tracing::debug!(
+                                channel_id = %channel_id.as_str(),
+                                session_id = %session_id,
+                                "Startup notification sent"
+                            );
+                            Ok(())
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                channel_id = %channel_id.as_str(),
+                                error = %e,
+                                "Failed to send startup notification"
+                            );
+                            Err(e)
+                        }
+                    }
+                }
+            })
+            .collect();
+
+        let results = futures::future::join_all(notification_futures).await;
+
+        let success_count = results.iter().filter(|r| r.is_ok()).count();
+        tracing::info!(
+            sent = success_count,
+            total = results.len(),
+            "Startup notifications sent"
+        );
     }
 
     /// Setup a new channel - invokes main agent to validate, clone, analyze, generate prompt
     pub async fn setup_channel(&self, channel_id: ChannelId, repo_name: String) -> Result<()> {
-        use std::time::Instant;
-        let total_start = Instant::now();
-
         tracing::info!(
-            "🎬 Starting channel setup {} repo='{}'",
+            "🎬 Setting up {} repo={}",
             channel_id.log_format(),
             repo_name
         );
 
         // Create and run main agent
-        tracing::debug!("  Creating MainAgent...");
-        let agent_start = Instant::now();
+        tracing::debug!("Creating main agent...");
         let mut main_agent = MainAgent::new(
             self.settings.clone(),
             self.workspace.clone(),
@@ -108,99 +218,74 @@ impl AgentManager {
             channel_id.clone(),
         )
         .await?;
-        tracing::debug!(
-            "  ✅ MainAgent created (duration={:?})",
-            agent_start.elapsed()
-        );
+        tracing::info!("✅ Main agent created");
 
-        tracing::info!("  🔗 Connecting MainAgent to Claude...");
-        let connect_start = Instant::now();
+        tracing::info!("🔗 Connecting main agent to Claude...");
         main_agent.connect().await?;
-        tracing::debug!(
-            "  ✅ Connected to Claude (duration={:?})",
-            connect_start.elapsed()
-        );
+        tracing::info!("✅ Connected to Claude");
 
-        tracing::info!("  🚀 Running repository setup (this may take 1-2 minutes)...");
-        let setup_start = Instant::now();
+        tracing::info!("🚀 Running repository setup (this may take 1-2 minutes)...");
         main_agent.setup_repository(&repo_name, &channel_id).await?;
-        tracing::info!(
-            "  ✅ Repository setup completed (duration={:?})",
-            setup_start.elapsed()
-        );
+        tracing::info!("✅ Repository setup completed");
 
-        tracing::debug!("  🔌 Disconnecting MainAgent...");
+        tracing::debug!("Disconnecting main agent...");
         main_agent.disconnect().await?;
 
         // Create repository agent
-        tracing::info!("  🤖 Creating RepoAgent {}...", channel_id.log_format());
-        let create_start = Instant::now();
+        tracing::info!(
+            "🤖 Creating repository-specific agent {}...",
+            channel_id.log_format()
+        );
         let repo_agent = self.create_repo_agent(channel_id.clone()).await?;
         self.repo_agents
             .insert(channel_id.clone(), Arc::new(Mutex::new(repo_agent)));
-        tracing::debug!(
-            "  ✅ RepoAgent created (duration={:?})",
-            create_start.elapsed()
-        );
-
         tracing::info!(
-            "✅ Channel setup complete {} repo='{}' (total_duration={:?})",
-            channel_id.log_format(),
-            repo_name,
-            total_start.elapsed()
+            "✅ Repository agent created and cached {}",
+            channel_id.log_format()
         );
 
         Ok(())
     }
 
-    /// Create a new repository agent
+    /// Create a new repository agent (instance method)
     async fn create_repo_agent(&self, channel_id: ChannelId) -> Result<RepoAgent> {
-        tracing::debug!(
-            "    Creating RepoAgent instance {}...",
-            channel_id.log_format()
-        );
-
-        let mut agent = RepoAgent::new(
-            channel_id.clone(),
+        Self::create_repo_agent_static(
+            channel_id,
             self.workspace.clone(),
             self.settings.clone(),
             self.progress_tracker.clone(),
         )
-        .await?;
-        tracing::debug!("    ✅ RepoAgent instance created");
+        .await
+    }
 
-        tracing::debug!("    🔗 Connecting RepoAgent to Claude...");
+    /// Create a new repository agent (static method for parallel execution)
+    async fn create_repo_agent_static(
+        channel_id: ChannelId,
+        workspace: Arc<Workspace>,
+        settings: Arc<Settings>,
+        progress_tracker: Arc<ProgressTracker>,
+    ) -> Result<RepoAgent> {
+        tracing::debug!(
+            channel_id = %channel_id.as_str(),
+            "Creating repo agent"
+        );
+
+        let mut agent =
+            RepoAgent::new(channel_id.clone(), workspace, settings, progress_tracker).await?;
+
+        tracing::debug!(
+            channel_id = %channel_id.as_str(),
+            "Connecting agent to Claude"
+        );
         agent.connect().await?;
-        tracing::debug!("    ✅ RepoAgent connected");
 
-        // Get session ID and send startup notification
-        let session_id = agent.get_session_id();
-        tracing::info!(
-            "    📋 Generated initial session_id={} for {}",
-            session_id,
-            channel_id.log_format()
+        tracing::debug!(
+            channel_id = %channel_id.as_str(),
+            session_id = %agent.get_session_id(),
+            "Agent connected"
         );
 
-        let notification = format!(
-            "🤖 *Agent Ready*\n\nSession ID: `{}`\n\nI'm ready to help with this repository! Type `/help` for available commands.",
-            session_id
-        );
-
-        // Send startup notification
-        let slack_client = self.progress_tracker.slack_client_ref();
-        let send_result = slack_client
-            .send_message(&channel_id, &notification, None)
-            .await;
-
-        if let Err(e) = send_result {
-            tracing::warn!(
-                "    ⚠️  Failed to send startup notification {}: {}",
-                channel_id.log_format(),
-                e
-            );
-        } else {
-            tracing::debug!("    ✅ Startup notification sent");
-        }
+        // NO per-channel startup notification sent here
 
         Ok(agent)
     }
@@ -253,5 +338,25 @@ impl AgentManager {
     /// Check if channel has a configured agent
     pub fn has_agent(&self, channel_id: &ChannelId) -> bool {
         self.repo_agents.contains_key(channel_id)
+    }
+
+    /// Get all active agents and their session IDs
+    /// Returns a list of (channel_id, session_id) tuples
+    pub async fn get_all_active_agents(&self) -> Vec<(ChannelId, String)> {
+        let mut result = Vec::new();
+
+        for entry in self.repo_agents.iter() {
+            let channel_id = entry.key().clone();
+
+            // Try to lock with short timeout
+            if let Ok(agent) =
+                tokio::time::timeout(Duration::from_millis(100), entry.value().lock()).await
+            {
+                let session_id = agent.get_session_id();
+                result.push((channel_id, session_id));
+            }
+        }
+
+        result
     }
 }

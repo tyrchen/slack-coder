@@ -1,5 +1,6 @@
 use crate::agent::AgentManager;
 use crate::error::Result;
+use crate::metadata::MetadataCache;
 use crate::slack::{
     ChannelId, FormHandler, MessageProcessor, MessageTs, SlackClient, SlackMessage, ThreadTs,
     UserId,
@@ -25,34 +26,42 @@ struct BotState {
     message_processor: Arc<MessageProcessor>,
     form_handler: Arc<FormHandler>,
     slack_client: Arc<SlackClient>,
+    metadata_cache: Arc<MetadataCache>,
     processed_events: Arc<DashMap<String, Instant>>,
 }
 
 pub struct EventHandler {
     slack_client: Arc<SlackClient>,
     agent_manager: Arc<AgentManager>,
+    metadata_cache: Arc<MetadataCache>,
 }
 
 impl EventHandler {
-    pub fn new(slack_client: Arc<SlackClient>, agent_manager: Arc<AgentManager>) -> Self {
+    pub fn new(
+        slack_client: Arc<SlackClient>,
+        agent_manager: Arc<AgentManager>,
+        metadata_cache: Arc<MetadataCache>,
+    ) -> Self {
         Self {
             slack_client,
             agent_manager,
+            metadata_cache,
         }
     }
 
     /// Start listening for Slack events using Socket Mode
     pub async fn start(self) -> Result<()> {
-        tracing::info!("🔧 Initializing event handler components...");
+        tracing::info!("Initializing event handler components");
 
         // Create SHARED processed_events cache (same instance across all event callbacks)
         let processed_events = Arc::new(DashMap::new());
-        tracing::debug!("Created shared event deduplication cache");
+        tracing::debug!("Created event deduplication cache");
 
         // Create state with our components
         let message_processor = Arc::new(MessageProcessor::new(
             self.slack_client.clone(),
             self.agent_manager.clone(),
+            self.metadata_cache.clone(),
         ));
         let form_handler = Arc::new(FormHandler::new(
             self.slack_client.clone(),
@@ -63,10 +72,11 @@ impl EventHandler {
             message_processor,
             form_handler,
             slack_client: self.slack_client.clone(),
+            metadata_cache: self.metadata_cache.clone(),
             processed_events,
         };
 
-        tracing::debug!("Creating listener environment with bot state");
+        tracing::debug!("Creating listener environment");
         let listener_environment = Arc::new(
             SlackClientEventsListenerEnvironment::new(self.slack_client.get_client())
                 .with_error_handler(Self::error_handler)
@@ -86,17 +96,15 @@ impl EventHandler {
 
         // Get app token from client
         let app_token = self.slack_client.get_app_token();
-        tracing::info!("🔌 Connecting to Slack via Socket Mode...");
+        tracing::info!("Connecting to Slack via Socket Mode");
 
         socket_mode_listener
             .listen_for(&app_token)
             .await
             .map_err(|e| crate::error::SlackCoderError::SlackApi(e.to_string()))?;
 
-        tracing::info!("✅ Connected! Listening for Slack events...");
-        tracing::info!(
-            "📱 Bot is ready to receive messages. Invite it to a channel and @mention it!"
-        );
+        tracing::info!("Connected to Slack Socket Mode");
+        tracing::info!("Bot is ready to receive messages");
 
         socket_mode_listener.serve().await;
 
@@ -108,9 +116,13 @@ impl EventHandler {
         _client: Arc<SlackHyperClient>,
         user_state: SlackClientEventsUserState,
     ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let event_type = format!("{:?}", event.event);
-        tracing::info!("📨 Received push event: {}", event_type);
-        tracing::debug!("  Event details: {:?}", event.event);
+        // Log event type without verbose debug dump
+        let event_type = match &event.event {
+            SlackEventCallbackBody::AppMention(_) => "app_mention",
+            SlackEventCallbackBody::Message(_) => "message",
+            _ => "other",
+        };
+        tracing::debug!(event_type = event_type, "Received push event");
 
         // Extract state
         let state: BotState = {
@@ -126,24 +138,9 @@ impl EventHandler {
 
         // Spawn processing as background task and return immediately
         // This ensures we acknowledge within 3 seconds (Slack's timeout)
-        let task_id = uuid::Uuid::new_v4().to_string();
-        tracing::debug!("🚀 Spawning background task task_id={}", &task_id[..8]);
-
         tokio::spawn(async move {
-            let start = Instant::now();
             if let Err(e) = Self::process_event(event, state).await {
-                tracing::error!(
-                    "❌ Error processing event (task_id={}, duration={:?}): {}",
-                    &task_id[..8],
-                    start.elapsed(),
-                    e
-                );
-            } else {
-                tracing::debug!(
-                    "✅ Event processing completed (task_id={}, duration={:?})",
-                    &task_id[..8],
-                    start.elapsed()
-                );
+                tracing::error!(error = %e, "Event processing failed");
             }
         });
 
@@ -163,35 +160,69 @@ impl EventHandler {
                 if let Some(last_seen) = state.processed_events.get(&event_key) {
                     // Event was already processed - skip regardless of how long ago
                     tracing::debug!(
-                        "🔄 Duplicate event detected (processed {} ago), skipping: {}",
-                        format_duration(last_seen.elapsed()),
-                        event_key
+                        event_key = %event_key,
+                        last_seen_ago = format_duration(last_seen.elapsed()),
+                        "Duplicate event detected, skipping"
                     );
                     return Ok(());
                 }
                 state
                     .processed_events
                     .insert(event_key.clone(), Instant::now());
-                tracing::debug!("✅ New event, processing: {}", event_key);
+                tracing::debug!(event_key = %event_key, "Processing new event");
 
                 let channel_id = ChannelId::new(mention.channel.to_string());
-                let user_id = UserId::new(mention.user.to_string());
+
                 let text = mention.content.text.clone().unwrap_or_default();
+                let user_id = UserId::new(mention.user.to_string());
+
+                // Get enriched context with channel and user names
+                let ctx = state
+                    .metadata_cache
+                    .log_context(channel_id.as_str(), mention.user.as_ref())
+                    .await;
+
+                let span = tracing::info_span!(
+                    "app_mention",
+                    channel_id = %ctx.channel_id,
+                    channel = %ctx.channel_name,
+                    user_id = %ctx.user_id,
+                    user = %ctx.user_name,
+                    ts = %mention.origin.ts
+                );
+                let _guard = span.enter();
+
+                // Show first 150 chars of message for context
+                let message_preview = if text.len() > 150 {
+                    format!("{}...", text.chars().take(150).collect::<String>())
+                } else {
+                    text.clone()
+                };
+
+                tracing::info!(
+                    channel_id = %ctx.channel_id,
+                    channel = %ctx.channel_display,
+                    user_id = %ctx.user_id,
+                    user = %ctx.user_display,
+                    message = %message_preview,
+                    "App mentioned in {} by {}: \"{}\"",
+                    ctx.channel_display,
+                    ctx.user_display,
+                    message_preview
+                );
+
+                // Log selective fields instead of full debug dump
+                tracing::debug!(
+                    text_len = text.len(),
+                    has_blocks = mention.content.blocks.is_some(),
+                    thread_ts = ?mention.origin.thread_ts,
+                    "App mention details"
+                );
                 let ts = MessageTs::new(mention.origin.ts.to_string());
                 let thread_ts = mention
                     .origin
                     .thread_ts
-                    .as_ref()
                     .map(|t| ThreadTs::new(t.to_string()));
-
-                tracing::info!(
-                    "🔔 App mentioned {} by user: {} text_length={} in_thread={}",
-                    channel_id.log_format(),
-                    mention.user,
-                    text.len(),
-                    thread_ts.is_some()
-                );
-                tracing::debug!("  Full mention event: {:?}", mention);
 
                 // Strip bot mention from text
                 let clean_text = text
@@ -202,15 +233,15 @@ impl EventHandler {
                     .trim()
                     .to_string();
 
-                tracing::debug!("  📝 Original text: '{}'", text);
-                tracing::debug!("  🧹 Cleaned text: '{}'", clean_text);
+                tracing::debug!(
+                    original_len = text.len(),
+                    cleaned_len = clean_text.len(),
+                    "Cleaned mention text"
+                );
 
                 // Check if this is a command (starts with /)
                 if clean_text.starts_with('/') {
-                    tracing::info!(
-                        "🎯 Detected command: '{}', forwarding to message processor",
-                        clean_text
-                    );
+                    tracing::info!(command = %clean_text, "Processing command");
                     // Forward to message processor for command handling
                     let slack_message = SlackMessage {
                         channel: channel_id.clone(),
@@ -221,47 +252,29 @@ impl EventHandler {
                     };
 
                     if let Err(e) = state.message_processor.process_message(slack_message).await {
-                        tracing::error!(
-                            "❌ Command processing failed {} command='{}': {}",
-                            channel_id.log_format(),
-                            clean_text,
-                            e
-                        );
+                        tracing::error!(error = %e, "Command processing failed");
                     }
                 }
                 // Check if this looks like a repository name (owner/repo pattern)
                 else if clean_text.contains('/') && clean_text.split_whitespace().count() == 1 {
-                    tracing::info!(
-                        "🔧 Detected setup request {} repo='{}'",
-                        channel_id.log_format(),
-                        clean_text
-                    );
+                    tracing::info!(repo = %clean_text, "Processing setup request");
                     if let Err(e) = state
                         .form_handler
                         .handle_repo_setup(channel_id.clone(), clean_text.clone())
                         .await
                     {
-                        tracing::error!(
-                            "❌ Setup failed {} repo='{}': {}",
-                            channel_id.log_format(),
-                            clean_text,
-                            e
-                        );
+                        tracing::error!(error = %e, repo = %clean_text, "Setup failed");
                         let _ = state
                             .slack_client
                             .send_message(
                                 &channel_id,
-                                &format!("❌ Setup failed: {}", e),
+                                &format!("Setup failed: {}", e),
                                 thread_ts.as_ref(),
                             )
                             .await;
                     }
                 } else {
-                    tracing::info!(
-                        "💬 Processing regular message {} text_preview='{}'",
-                        channel_id.log_format(),
-                        &clean_text.chars().take(50).collect::<String>()
-                    );
+                    tracing::info!("Processing regular message");
                     // Regular message - process it
                     let slack_message = SlackMessage {
                         channel: channel_id,
@@ -272,23 +285,32 @@ impl EventHandler {
                     };
 
                     if let Err(e) = state.message_processor.process_message(slack_message).await {
-                        tracing::error!("❌ Message processing failed: {}", e);
+                        tracing::error!(error = %e, "Message processing failed");
                     }
                 }
             }
             SlackEventCallbackBody::Message(message) => {
-                tracing::info!("📬 Message event received subtype={:?}", message.subtype);
-                tracing::debug!("  Full message: {:?}", message);
+                let channel = message.origin.channel.as_ref().map(|c| c.to_string());
+                let user = message.sender.user.as_ref().map(|u| u.to_string());
+
+                // Log selective fields instead of full debug dump
+                tracing::debug!(
+                    channel = ?channel,
+                    user = ?user,
+                    subtype = ?message.subtype,
+                    has_bot_id = message.sender.bot_id.is_some(),
+                    "Message event received"
+                );
 
                 // Ignore bot's own messages to prevent loops
                 if message.sender.bot_id.is_some() {
-                    tracing::debug!("  🤖 Ignoring bot's own message");
+                    tracing::debug!("Ignoring bot message");
                     return Ok(());
                 }
 
                 // Ignore message updates/edits
                 if message.subtype == Some(SlackMessageEventType::MessageChanged) {
-                    tracing::debug!("  ✏️  Ignoring message edit event");
+                    tracing::debug!("Ignoring message edit");
                     return Ok(());
                 }
 
@@ -296,35 +318,24 @@ impl EventHandler {
                 if message.subtype == Some(SlackMessageEventType::ChannelJoin) {
                     if let Some(channel_id) = message.origin.channel {
                         let channel = ChannelId::new(channel_id.to_string());
-                        tracing::info!("🎉 Bot joined channel {}", channel.log_format());
+                        tracing::info!(channel = %channel.as_str(), "Bot joined channel");
 
                         // Check if already setup
-                        let has_agent = state.form_handler.agent_manager.has_agent(&channel);
-                        if has_agent {
-                            tracing::info!(
-                                "  ✅ Channel {} already has an agent configured",
-                                channel.log_format()
-                            );
+                        if state.form_handler.agent_manager.has_agent(&channel) {
+                            tracing::info!("Channel already configured");
                         } else {
-                            tracing::info!(
-                                "  📋 Showing welcome message and setup instructions {}",
-                                channel.log_format()
-                            );
+                            tracing::info!("Showing setup instructions");
                             if let Err(e) = state.form_handler.show_repo_setup_form(&channel).await
                             {
-                                tracing::error!(
-                                    "  ❌ Failed to show setup form {}: {}",
-                                    channel.log_format(),
-                                    e
-                                );
+                                tracing::error!(error = %e, "Failed to show setup form");
                             }
                         }
                     }
                 } else {
                     // Handle regular messages in threads where bot participated
                     tracing::debug!(
-                        "  Regular message (subtype: {:?}), skipping for now",
-                        message.subtype
+                        subtype = ?message.subtype,
+                        "Skipping regular message"
                     );
                 }
             }
@@ -341,7 +352,11 @@ impl EventHandler {
         _client: Arc<SlackHyperClient>,
         _states: SlackClientEventsUserState,
     ) -> HttpStatusCode {
-        tracing::error!("Slack event error: {:#?}", err);
+        tracing::error!(
+            error = %err,
+            error_kind = std::any::type_name_of_val(&*err),
+            "Slack event error"
+        );
         HttpStatusCode::OK
     }
 
@@ -359,7 +374,7 @@ impl EventHandler {
         });
 
         if removed > 0 {
-            tracing::debug!("🧹 Cleaned up {} old events from cache", removed);
+            tracing::debug!(removed_count = removed, "Cleaned up old events from cache");
         }
     }
 }

@@ -512,6 +512,47 @@ The common workflow requirements (git workflows, branch management, PR creation,
 - TodoWrite usage instructions
 - Generic coding advice
 
+## Progress Tracking with TodoWrite
+
+**CRITICAL**: You MUST use the TodoWrite tool to track your progress during repository setup!
+
+The Slack bot intercepts TodoWrite tool calls and displays real-time progress updates to the user with:
+- Progress bar showing completion percentage
+- List of tasks with checkboxes
+- Current task highlighted with emoji
+- Timing information for each task
+
+### When to Use TodoWrite
+
+**ALWAYS use TodoWrite for repository setup** since it's a multi-step task:
+1. Validate repository
+2. Clone repository
+3. Analyze codebase
+4. Generate system prompt
+5. Save configuration
+
+### How to Use TodoWrite
+
+Create your todo list at the START of the setup process:
+
+```
+Use TodoWrite to create task list:
+{
+  "todos": [
+    {"content": "Validate repository exists and is accessible", "status": "pending", "activeForm": "Validating repository"},
+    {"content": "Clone repository to workspace", "status": "pending", "activeForm": "Cloning repository"},
+    {"content": "Analyze codebase comprehensively", "status": "pending", "activeForm": "Analyzing codebase"},
+    {"content": "Generate system prompt for repository", "status": "pending", "activeForm": "Generating system prompt"},
+    {"content": "Save system prompt to workspace", "status": "pending", "activeForm": "Saving system prompt"}
+  ]
+}
+```
+
+**Update the todo list as you work**:
+- Mark tasks as "in_progress" when starting them
+- Mark tasks as "completed" when done
+- Users will see real-time progress updates in Slack
+
 ## Assistant Behavior
 
 As the repository-specific coding assistant, you should:
