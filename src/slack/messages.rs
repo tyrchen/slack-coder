@@ -3,7 +3,7 @@ use crate::error::{Result, SlackCoderError};
 use crate::logging::Timer;
 use crate::metadata::MetadataCache;
 use crate::slack::{
-    ChannelId, SlackClient, SlackCommandHandler, SlackMessage, ThreadTs, UsageMetrics,
+    ChannelId, MessageTs, SlackClient, SlackCommandHandler, SlackMessage, ThreadTs, UsageMetrics,
     markdown_to_slack,
 };
 use claude_agent_sdk_rs::Message as ClaudeMessage;
@@ -97,8 +97,20 @@ impl MessageProcessor {
 
         // Forward to agent
         tracing::debug!("Forwarding to repository agent");
-        self.forward_to_agent(&message.text, &message.channel, message.thread_ts.as_ref())
-            .await
+        // Use existing thread_ts if in thread, otherwise use message ts to create thread
+        let reply_thread_ts = message
+            .thread_ts
+            .as_ref()
+            .map(|t| t.clone())
+            .unwrap_or_else(|| ThreadTs::new(message.ts.as_str()));
+
+        self.forward_to_agent(
+            &message.text,
+            &message.channel,
+            &reply_thread_ts,
+            &message.ts,
+        )
+        .await
     }
 
     /// Forward message to repository agent and stream response
@@ -106,7 +118,8 @@ impl MessageProcessor {
         &self,
         text: &str,
         channel: &ChannelId,
-        thread_ts: Option<&ThreadTs>,
+        thread_ts: &ThreadTs,
+        _message_ts: &MessageTs,
     ) -> Result<()> {
         tracing::debug!("Acquiring agent lock");
         // Get agent from manager (returns Arc<Mutex<RepoAgent>>)
@@ -132,7 +145,7 @@ impl MessageProcessor {
                          Please wait for the current task to complete and try again in a moment.\n\n\
                          *Tip*: Long-running tasks (like comprehensive code analysis or documentation) \
                          can take several minutes. You can check the latest progress update above.",
-                        thread_ts, // This ensures it's a reply in the thread
+                        Some(thread_ts), // This ensures it's a reply in the thread
                     )
                     .await?;
 
@@ -253,12 +266,16 @@ impl MessageProcessor {
                     };
 
                     self.slack_client
-                        .send_message(channel, &format!("{}{}", prefix, chunk_text), thread_ts)
+                        .send_message(
+                            channel,
+                            &format!("{}{}", prefix, chunk_text),
+                            Some(thread_ts),
+                        )
                         .await?;
                 }
             } else {
                 self.slack_client
-                    .send_message(channel, &final_message, thread_ts)
+                    .send_message(channel, &final_message, Some(thread_ts))
                     .await?;
             }
 

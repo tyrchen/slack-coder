@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("slack_coder=info,slack_morphism=info")),
+                .unwrap_or_else(|_| EnvFilter::new("slack_coder=debug,slack_morphism=debug")),
         )
         .with_target(true)
         .with_line_number(true)
